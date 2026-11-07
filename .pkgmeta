@@ -1,5 +1,9 @@
 package-as: Fellowstep
 
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 ignore:
   - README.md
   - .gitignore
