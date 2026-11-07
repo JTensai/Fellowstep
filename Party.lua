@@ -11,7 +11,22 @@ QM.Party = Party
 Party.peers = {}   -- [fullName] = { hasAddon, quiet, version, quests = {}, completed = {}, asked = {} }
 Party.order = {}   -- array of member records for the current group, you first
 
+--- Match a sender to the roster name. Names should match exactly, but fall back to
+--- the short name so a realm spelled differently can't hide a party member.
+local function resolve(name)
+    for _, m in ipairs(Party.order) do
+        if m.name == name then return name end
+    end
+    local short = QM.ShortName(name)
+    for _, m in ipairs(Party.order) do
+        if not m.isPlayer and not m.fake and QM.ShortName(m.name) == short then return m.name end
+    end
+    return name
+end
+Party.Resolve = resolve
+
 local function peer(name)
+    name = resolve(name)
     local p = Party.peers[name]
     if not p then
         p = { quests = {}, completed = {}, asked = {} }
@@ -53,6 +68,14 @@ function Party:Rebuild()
         for _, fake in ipairs(QM.Test:Members(#order)) do order[#order + 1] = fake end
     end
     self.order = order
+    -- peers heard from before they showed up in the roster: move them to the roster name
+    for key, p in pairs(self.peers) do
+        local name = resolve(key)
+        if name ~= key and not self.peers[name] then
+            self.peers[name] = p
+            self.peers[key] = nil
+        end
+    end
     changed()
 end
 

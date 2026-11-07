@@ -77,22 +77,26 @@ end
 -- Player names
 ---------------------------------------------------------------------------
 
+-- Realm names can arrive with or without spaces/dashes ("Some Realm" vs "SomeRealm")
+-- depending on where they come from, so every key is built the same way.
+local function canon(name, realm)
+    if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
+    if not realm or realm == "" then return name end
+    return name .. "-" .. (realm:gsub("[%s%-]", ""))
+end
+
 --- "Name-Realm" for a unit, always with realm, so it matches CHAT_MSG_ADDON senders.
 function QM.FullName(unit)
     local ok, name, realm = pcall(UnitFullName, unit)
     if not ok or not name then return nil end
-    if not realm or realm == "" then realm = GetNormalizedRealmName() end
-    if not realm then return name end
-    return name .. "-" .. realm
+    return canon(name, realm)
 end
 
 function QM.NormalizeSender(sender)
     if not sender then return nil end
-    if not sender:find("-", 1, true) then
-        local realm = GetNormalizedRealmName()
-        if realm then return sender .. "-" .. realm end
-    end
-    return sender
+    local name, realm = sender:match("^([^%-]+)%-(.+)$")
+    if name then return canon(name, realm) end
+    return canon(sender, nil)
 end
 
 --- Short display name (drops the realm).

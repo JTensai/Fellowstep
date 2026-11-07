@@ -43,6 +43,7 @@ local function pump()
         if channel == "GROUP" then channel = groupChannel() end
         if channel then
             local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.text, channel, target)
+            QM:Debug("send", channel, target or "", item.text:sub(1, 30), "->", tostring(result))
             if not ok then
                 QM:Debug("send failed", result)
             elseif type(result) == "number" and Enum and Enum.SendAddonMessageResult then
@@ -194,8 +195,8 @@ local snapshots = {} -- [sender] = { seq, got, n, quests }
 
 local handlers = {}
 
-handlers.H = function(sender, f)
-    QM:Fire("QM_PEER_HELLO", sender, tonumber(f[2]) or 0, f[3], f[4] == "1")
+handlers.H = function(sender, f, channel)
+    QM:Fire("QM_PEER_HELLO", sender, tonumber(f[2]) or 0, f[3], f[4] == "1", channel)
 end
 
 handlers.R = function(sender)
@@ -263,15 +264,28 @@ end
 
 QM:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, text, channel, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
+    local raw = sender
     sender = QM.NormalizeSender(sender)
     if sender == QM.playerName then return end
+    Comm.lastHeard = Comm.lastHeard or {}
+    Comm.lastHeard[sender] = raw
+    QM:Debug("got", channel, raw, text:sub(1, 30))
     local f = split(text)
     local handler = handlers[f[1]]
-    if handler then handler(sender, f) end
+    if handler then handler(sender, f, channel) end
 end)
 
 QM:On("QM_LOADED", function()
-    C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
+    local ok, result = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
+    Comm.prefixResult = ok and tostring(result) or ("error " .. tostring(result))
+end)
+
+QM:On("QM_PRINT_STATUS", function()
+    if not QM.db or not QM.db.debug then return end
+    QM:Print("prefix " .. PREFIX .. " registered: " .. tostring(Comm.prefixResult) .. ", channel: " .. tostring(groupChannel()))
+    for name, raw in pairs(Comm.lastHeard or {}) do
+        QM:Print("heard from " .. raw .. " (as " .. name .. ")")
+    end
 end)
 
 ---------------------------------------------------------------------------
@@ -292,7 +306,27 @@ QM:On("QM_LOG_CHANGED", function(_, changed, removed)
     end
 end)
 
-local wasInGroup = false
+-- Say hello again while anyone in the group still hasn't answered. A hello can be
+-- lost (sent a moment before the server finished adding us to the group, a reload
+-- on the other end), and one missed hello used to leave both sides blind.
+local retryTimer
+local function scheduleRetries()
+    if retryTimer then retryTimer:Cancel() end
+    local tries = 0
+    local t
+    t = C_Timer.NewTicker(10, function()
+        tries = tries + 1
+        if not IsInGroup() or tries > 6 then t:Cancel() return end
+        local missing = false
+        for _, m in ipairs(QM.Party:Members()) do
+            if not m.isPlayer and not m.fake and not QM.Party:HasAddon(m) then missing = true end
+        end
+        if not missing then t:Cancel() return end
+        Comm:SendHello("GROUP")
+    end)
+    retryTimer = t
+end
+
 local announcePending = false
 local function announce()
     if announcePending then return end
@@ -303,26 +337,49 @@ local function announce()
         Comm:SendHello("GROUP")
         Comm:SendSnapshot("GROUP")
         Comm:RequestSnapshot()
+        scheduleRetries()
     end)
 end
 Comm.Announce = announce
 
+-- Announce whenever someone new shows up, not only when we join: either side may
+-- have missed the other's hello.
+local known = {}
+local function rosterNames()
+    local names = {}
+    if IsInGroup() then
+        for i = 1, 4 do
+            local n = UnitExists("party" .. i) and QM.FullName("party" .. i)
+            if n then names[n] = true end
+        end
+    end
+    return names
+end
+
 QM:RegisterEvent("GROUP_ROSTER_UPDATE", function()
-    local inGroup = IsInGroup()
-    if inGroup and not wasInGroup then announce() end
-    wasInGroup = inGroup
+    if not IsInGroup() then wipe(known) return end
+    local names, fresh = rosterNames(), false
+    for n in pairs(names) do
+        if not known[n] then fresh = true end
+    end
+    known = names
+    if fresh then announce() end
 end)
 
 QM:On("QM_LOGIN", function()
-    wasInGroup = IsInGroup()
-    if wasInGroup then announce() end
+    known = rosterNames()
+    if IsInGroup() then announce() end
 end)
 
--- A new peer said hello: answer once so they learn about us too.
+-- Someone said hello to the group: answer them directly so they learn about us too.
+-- Answer every group hello (they may have reloaded and forgotten us), but never a
+-- whispered one, which is itself an answer.
 local greeted = {}
-QM:On("QM_PEER_HELLO", function(_, sender)
-    if greeted[sender] then return end
-    greeted[sender] = true
+QM:On("QM_PEER_HELLO", function(_, sender, _, _, _, channel)
+    if channel == "WHISPER" then return end
+    local last = greeted[sender]
+    if last and GetTime() - last < 5 then return end
+    greeted[sender] = GetTime()
     Comm:SendHello("WHISPER", sender)
     Comm:SendSnapshot("WHISPER", sender)
 end)
