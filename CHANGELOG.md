@@ -1,5 +1,9 @@
 # Fellowstep
 
+## 0.4.4
+- No more "No player named ... is currently playing" spam. Fellowstep no longer whispers anyone; it talks over the party channel only.
+- Fixes syncing with players whose names have spaces.
+
 ## 0.4.3
 - Fix party members with Fellowstep showing as "no Fellowstep".
 - Keeps saying hello until everyone in the group answers, and answers again after a /reload.

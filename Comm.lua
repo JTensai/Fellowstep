@@ -17,7 +17,7 @@ local Comm = {}
 QM.Comm = Comm
 
 local PREFIX = "Fellowstep"
-local MAX_PAYLOAD = 240
+local MAX_PAYLOAD = 190 -- leaves room for the "T;name;" header on directed messages
 
 ---------------------------------------------------------------------------
 -- Throttled send queue (the server allows short bursts, then about 1 per second)
@@ -65,7 +65,15 @@ end
 C_Timer.NewTicker(0.25, pump)
 
 --- Queue one raw message. channel is "GROUP" or "WHISPER" (with target).
+--- "WHISPER" never becomes a real whisper: the server refuses whispers to some
+--- names (ones with spaces, for one), so directed messages go to the group as
+--- "T;target;message" and everyone but the target ignores them.
 function Comm:SendRaw(text, channel, target)
+    if channel == "WHISPER" then
+        if not target then return end
+        text = "T;" .. target .. ";" .. text
+        channel, target = "GROUP", nil
+    end
     if #text > 250 then
         QM:Debug("dropping oversize message", #text)
         return
@@ -191,6 +199,12 @@ function Comm.DecodeEntry(entry)
     return id, { state = state, objectives = objectives }
 end
 
+function Comm.IsMe(name)
+    if not name or not QM.playerName then return false end
+    if QM.NormalizeSender(name) == QM.playerName then return true end
+    return QM.ShortName(name) == QM.ShortName(QM.playerName)
+end
+
 local snapshots = {} -- [sender] = { seq, got, n, quests }
 
 local handlers = {}
@@ -269,7 +283,12 @@ QM:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, text, channel, sender)
     if sender == QM.playerName then return end
     Comm.lastHeard = Comm.lastHeard or {}
     Comm.lastHeard[sender] = raw
-    QM:Debug("got", channel, raw, text:sub(1, 30))
+    QM:Debug("got", channel, raw, text:sub(1, 40))
+    local to, inner = text:match("^T;([^;]+);(.*)$")
+    if to then
+        if not Comm.IsMe(to) then return end
+        text, channel = inner, "WHISPER" -- a directed answer, handled like a whisper
+    end
     local f = split(text)
     local handler = handlers[f[1]]
     if handler then handler(sender, f, channel) end
