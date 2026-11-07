@@ -1,0 +1,24 @@
+## Interface: 16001
+## Title: Fellowstep
+## Notes: Party quest tracker. See where everyone is in each quest chain, who is behind, and who still needs a quest.
+## Author: Jordan
+## Version: @project-version@
+## Category: Quests
+## Dependencies: QuestieDB
+## SavedVariables: FellowstepDB
+## SavedVariablesPerCharacter: FellowstepCharDB
+## AddonCompartmentFunc: Fellowstep_OnAddonCompartmentClick
+## IconTexture: Interface\AddOns\Fellowstep\Media\Icon64
+## X-Curse-Project-ID: 1788588
+
+Core.lua
+Log.lua
+Comm.lua
+Party.lua
+Chains.lua
+TestMode.lua
+Widgets.lua
+Together.lua
+Matrix.lua
+Settings.lua
+Minimap.lua

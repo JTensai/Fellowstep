@@ -1,0 +1,8 @@
+package-as: Fellowstep
+
+ignore:
+  - README.md
+  - .gitignore
+  - .pkgmeta
+  - .github
+  - _old
