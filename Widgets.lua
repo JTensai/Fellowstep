@@ -523,7 +523,7 @@ function UI.TellParty(text, loc)
     elseif loc and loc.x then
         message = message .. (" (%.1f, %.1f)"):format(loc.x, loc.y)
     end
-    local channel = IsInGroup(LE_PARTY_CATEGORY_INSTANCE) and "INSTANCE_CHAT" or (IsInRaid() and "RAID") or (IsInGroup() and "PARTY")
+    local channel = QM.GroupChannel()
     if not channel or (QM.Test and QM.Test:IsOn()) then
         -- solo, or test mode (pretend names shouldn't reach real party chat): only you see it
         QM:Print(message .. (channel and " |cff888888(test mode: only you see this)|r" or ""))

@@ -27,10 +27,7 @@ local tokens, MAX_TOKENS, REGEN = 6, 6, 1.0
 local lastRegen = GetTime()
 
 local function groupChannel()
-    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
-    if IsInRaid() then return "RAID" end
-    if IsInGroup() then return "PARTY" end
-    return nil
+    return QM.GroupChannel()
 end
 
 local function pump()

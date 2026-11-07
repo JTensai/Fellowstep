@@ -99,6 +99,20 @@ function QM.NormalizeSender(sender)
     return canon(sender, nil)
 end
 
+--- The chat channel that reaches the whole group, or nil when solo.
+--- Careful: if the instance-category constant is missing, IsInGroup(nil) means
+--- "in any group" and every message would go to INSTANCE_CHAT, which nobody gets.
+local INSTANCE_CATEGORY = LE_PARTY_CATEGORY_INSTANCE
+    or (Enum and Enum.PartyCategory and Enum.PartyCategory.Instance) or 2
+local HOME_CATEGORY = LE_PARTY_CATEGORY_HOME
+    or (Enum and Enum.PartyCategory and Enum.PartyCategory.Home) or 1
+function QM.GroupChannel()
+    if not IsInGroup() then return nil end
+    if IsInGroup(INSTANCE_CATEGORY) and not IsInGroup(HOME_CATEGORY) then return "INSTANCE_CHAT" end
+    if IsInRaid() then return "RAID" end
+    return "PARTY"
+end
+
 --- Short display name (drops the realm).
 function QM.ShortName(full)
     if not full then return "?" end
