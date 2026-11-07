@@ -1,14 +1,18 @@
 name: Package and release
+# Two ways to release:
+#  - bump the number in VERSION and push to main: this tags v<VERSION> and releases it
+#  - or push a v* tag yourself
 on:
   push:
-    tags:
-      - '**'
+    branches: [main]
+    paths: [VERSION]
+    tags: ['v*']
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # lets the packager publish the GitHub release
+      contents: write # create the tag and publish the GitHub release
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
@@ -17,5 +21,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Tag from VERSION
+        if: github.ref_type == 'branch'
+        id: tag
+        run: |
+          v="v$(tr -d '[:space:]' < VERSION)"
+          if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
+            echo "$v already released, nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$v" -m "Fellowstep ${v#v}"
+            git push origin "$v"
+          fi
+
       - name: Package and release
+        if: steps.tag.outputs.skip != 'true'
         uses: BigWigsMods/packager@v2
