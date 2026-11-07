@@ -99,6 +99,18 @@ function QM.NormalizeSender(sender)
     return canon(sender, nil)
 end
 
+--- Do two names belong to the same character? Forever names have two parts
+--- ("Clawdia Owlmighty"), but unit APIs can return only the first part while chat
+--- senders carry both, so fall back to the short name and then its first word.
+function QM.SameName(a, b)
+    if not a or not b then return false end
+    if QM.NormalizeSender(a) == QM.NormalizeSender(b) then return true end
+    local sa, sb = QM.ShortName(a), QM.ShortName(b)
+    if sa == sb then return true end
+    local fa, fb = sa:match("^(%S+)"), sb:match("^(%S+)")
+    return fa ~= nil and fa == fb
+end
+
 --- The chat channel that reaches the whole group, or nil when solo.
 --- Careful: if the instance-category constant is missing, IsInGroup(nil) means
 --- "in any group" and every message would go to INSTANCE_CHAT, which nobody gets.

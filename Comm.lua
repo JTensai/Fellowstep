@@ -198,8 +198,7 @@ end
 
 function Comm.IsMe(name)
     if not name or not QM.playerName then return false end
-    if QM.NormalizeSender(name) == QM.playerName then return true end
-    return QM.ShortName(name) == QM.ShortName(QM.playerName)
+    return QM.SameName(name, QM.playerName)
 end
 
 local snapshots = {} -- [sender] = { seq, got, n, quests }
@@ -277,7 +276,7 @@ QM:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, text, channel, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
     local raw = sender
     sender = QM.NormalizeSender(sender)
-    if sender == QM.playerName then return end
+    if QM.SameName(sender, QM.playerName) then return end
     Comm.lastHeard = Comm.lastHeard or {}
     Comm.lastHeard[sender] = raw
     QM:Debug("got", channel, raw, text:sub(1, 40))

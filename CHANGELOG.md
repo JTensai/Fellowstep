@@ -1,5 +1,8 @@
 # Fellowstep
 
+## 0.4.6
+- Fix party members with two-part names (like "Clawdia Owlmighty") showing as "no Fellowstep".
+
 ## 0.4.5
 - Fix party members not seeing each other: messages could go to the instance channel instead of party chat.
 

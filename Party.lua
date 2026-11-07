@@ -17,9 +17,8 @@ local function resolve(name)
     for _, m in ipairs(Party.order) do
         if m.name == name then return name end
     end
-    local short = QM.ShortName(name)
     for _, m in ipairs(Party.order) do
-        if not m.isPlayer and not m.fake and QM.ShortName(m.name) == short then return m.name end
+        if not m.isPlayer and not m.fake and QM.SameName(m.name, name) then return m.name end
     end
     return name
 end
