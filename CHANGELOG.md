@@ -1,6 +1,6 @@
 # Fellowstep
 
-## 0.4.2
+## 0.4.3
 - Fix party members with Fellowstep showing as "no Fellowstep".
 - Keeps saying hello until everyone in the group answers, and answers again after a /reload.
 
