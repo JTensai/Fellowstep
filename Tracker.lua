@@ -56,6 +56,13 @@ local function showTooltip(badge)
     GameTooltip:Show()
 end
 
+--- Room to leave at the right of each quest title for other addons' buttons.
+function Tracker.RightInset()
+    local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+    if loaded and (loaded("Spoken_Quests") or loaded("Spoken")) then return 18 end
+    return 0
+end
+
 local function getBadge(block)
     local b = badges[block]
     if b then return b end
@@ -93,12 +100,9 @@ local function paint(block, questID)
     b = getBadge(block)
     b.questID, b.chain, b.kind, b.n, b.rows = questID, chain, kind, n, rows
     b:ClearAllPoints()
-    local header = block.HeaderText
-    if header then
-        b:SetPoint("RIGHT", block, "TOPRIGHT", -2, -((header.GetLineHeight and header:GetLineHeight()) or 12) / 2 - 1)
-    else
-        b:SetPoint("TOPRIGHT", block, "TOPRIGHT", -2, 0)
-    end
+    -- top right of the title, left of anything else in that corner
+    -- (Spoken puts a 14px Play button at the block's top right)
+    b:SetPoint("TOPRIGHT", block, "TOPRIGHT", -Tracker.RightInset(), 0)
     if kind == "same" then
         b.icon:Show(); b.text:Hide()
     else
@@ -159,7 +163,7 @@ QM:On("QM_LOGIN", function()
     for _, name in ipairs({ "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }) do
         local module = _G[name]
         if type(module) == "table" then
-            for _, method in ipairs({ "Update", "LayoutContents" }) do
+            for _, method in ipairs({ "Update", "LayoutContents", "AddBlock" }) do
                 if type(module[method]) == "function" then hooksecurefunc(module, method, refreshSoon) end
             end
         end
