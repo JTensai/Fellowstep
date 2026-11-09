@@ -1,5 +1,12 @@
 # Fellowstep
 
+## 0.5.0
+- Badges in the quest tracker: green check when the group is on the same step, red -N when you're behind, blue +N when you're ahead. Click one to open that chain.
+- Search box for quest names.
+- "Ask to Share": ask a party member to share a quest you don't have.
+- Full chains are shown by default.
+- Fix a finished chain showing as "not started" (and "In sync") to party members.
+
 ## 0.4.6
 - Fix party members with two-part names (like "Clawdia Owlmighty") showing as "no Fellowstep".
 
