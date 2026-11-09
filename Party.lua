@@ -136,14 +136,16 @@ end
 
 --- Ask members with the addon about any of these quests we haven't asked about yet.
 function Party:RequestCompleted(ids)
+    local now = GetTime()
     for _, m in ipairs(self.order) do
         if not m.isPlayer and not m.fake then
             local p = self.peers[m.name]
             if p and p.hasAddon then
                 local need = {}
                 for _, id in ipairs(ids) do
-                    if p.completed[id] == nil and not p.asked[id] then
-                        p.asked[id] = true
+                    -- ask again if an answer hasn't come back after a while
+                    if p.completed[id] == nil and (not p.asked[id] or now - p.asked[id] > 20) then
+                        p.asked[id] = now
                         need[#need + 1] = id
                     end
                 end

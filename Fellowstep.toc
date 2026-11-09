@@ -22,3 +22,4 @@ Together.lua
 Matrix.lua
 Settings.lua
 Minimap.lua
+Tracker.lua

@@ -332,7 +332,7 @@ end
 local function buttonTip(button, title, text)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(title, 1, 1, 1)
+        GameTooltip:SetText(self.tipTitle or title, 1, 1, 1)
         GameTooltip:AddLine(self.tipText or text, 1, 0.82, 0, true)
         GameTooltip:Show()
     end)
@@ -428,8 +428,32 @@ local function createFrame()
     list.labelLine:SetPoint("TOPRIGHT", -8, -30)
     list.labelLine:SetHeight(1)
     list.labelLine:SetColorTexture(1, 0.82, 0, 0.3)
+    -- search: filters the list by chain or quest name
+    local ok, box = pcall(CreateFrame, "EditBox", "FellowstepSearchBox", list, "SearchBoxTemplate")
+    if not ok then box = CreateFrame("EditBox", "FellowstepSearchBox", list, "InputBoxTemplate") end
+    box:SetHeight(20)
+    box:SetPoint("TOPLEFT", 16, -36)
+    box:SetPoint("TOPRIGHT", -10, -36)
+    box:SetAutoFocus(false)
+    if type(box.Instructions) == "table" and box.Instructions.SetText then box.Instructions:SetText("Search quests") end
+    box:HookScript("OnTextChanged", function(self)
+        local text = (self:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        local filter = text ~= "" and text or nil
+        if filter == list.filter then return end
+        list.filter = filter
+        if list.scroll then Matrix:Refresh() end
+    end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    list.search = box
+    list.empty = UI.Text(list, "muted")
+    list.empty:SetPoint("TOPLEFT", 14, -66)
+    list.empty:SetPoint("RIGHT", -14, 0)
+    list.empty:SetWordWrap(true)
+    list.empty:Hide()
+
     list.scroll = makeListScroller(list)
-    list.scroll:SetPoint("TOPLEFT", 6, -36)
+    list.scroll:SetPoint("TOPLEFT", 6, -62)
     list.scroll:SetPoint("BOTTOMRIGHT", -12, 6)
     list.scroll.child:SetWidth(LIST_WIDTH - 18)
     list.rows, list.headers = {}, {}
@@ -798,8 +822,34 @@ local function zoneHeader(index, content)
     return h
 end
 
+--- Does a chain match the search text? Chain title or any quest in it.
+local function matchesFilter(chain, filter)
+    if not filter then return true end
+    if (chain.title or ""):lower():find(filter, 1, true) then return true end
+    for _, step in ipairs(chain.steps) do
+        if (step.name or ""):lower():find(filter, 1, true) then return true end
+    end
+    return false
+end
+
+local function groupChains()
+    local all = QM.Chains:ForGroup()
+    for _, chain in ipairs(all) do QM.Chains:AskAbout(chain) end
+    local filter = list and list.filter
+    if not filter then return all end
+    local out = {}
+    for _, chain in ipairs(all) do
+        if matchesFilter(chain, filter) then out[#out + 1] = chain end
+    end
+    return out
+end
+
 function Matrix:RefreshList()
-    chains = QM.Chains:ForGroup()
+    chains = groupChains()
+    if list.empty then
+        list.empty:SetText(list.filter and ("No party quests match \"%s\"."):format(list.filter) or "")
+        list.empty:SetShown(list.filter ~= nil and #chains == 0)
+    end
     local content = list.scroll.child
     for _, r in ipairs(list.rows) do r:Hide() end
     for _, h in ipairs(list.headers) do h:Hide() end
@@ -830,7 +880,7 @@ function Matrix:RefreshList()
             h:Show()
             y = y + 24
         end
-        if closed[zone] then
+        if closed[zone] and not list.filter then
             -- zone folded away: skip its chains
         else
         ri = ri + 1
@@ -1013,7 +1063,7 @@ function Matrix:RefreshTree(jump)
     end
 
     -- which steps to draw
-    local condense = QM.char.condense ~= false
+    local condense = QM.char.condense == true
     local hideSpoilers = QM.char.hideSpoilers ~= false
     local frontier = math.max(reachedDepth, 0)
     local visible, hiddenDone, hiddenAhead = {}, 0, 0
@@ -1237,7 +1287,7 @@ function Matrix:Refresh(jump)
     if not QM.char.listCollapsed then
         changedSelection = self:RefreshList()
     else
-        chains = QM.Chains:ForGroup()
+        chains = groupChains()
         if not selectedChain() then selectedKey = chains[1] and chains[1].key; changedSelection = true end
     end
     self:RefreshTree(jump or changedSelection)
@@ -1299,11 +1349,34 @@ function Matrix:ShowDetail(node)
     end)
 
     local canShare = QM.Log.active[step.id] and someoneNeeds
-    detail.share:SetShown(canShare and true or false)
-    detail.share:SetScript("OnClick", function()
-        UI.ShareQuest(step.id)
-        detail:Hide()
-    end)
+    -- you don't have it but someone with the addon does: ask them to share it
+    local holder
+    if not QM.Log.active[step.id] and not QM.Log:IsCompleted(step.id) then
+        for _, m in ipairs(QM.Party:Members()) do
+            if not m.isPlayer and QM.Party:HasAddon(m) and QM.Party:GetQuest(m, step.id) then holder = m break end
+        end
+    end
+    if canShare then
+        detail.share:SetText("Share Quest with Party")
+        detail.share.tipTitle = "Share Quest with Party"
+        detail.share.tipText = "Offers your copy of this quest to everyone in the group who can take it, like the Share button in your quest log."
+        detail.share:SetScript("OnClick", function()
+            UI.ShareQuest(step.id)
+            detail:Hide()
+        end)
+    elseif holder then
+        local who = QM.ShortName(holder.name)
+        detail.share:SetText("Ask " .. who .. " to Share")
+        detail.share.tipTitle = "Ask " .. who .. " to Share"
+        detail.share.tipText = ("Pops up a Share button on %s's screen for this quest."):format(who)
+        detail.share:SetScript("OnClick", function()
+            QM.Comm:AskToShare(holder.name, step.id)
+            QM:Print(("asked %s to share %s."):format(who, step.name or "the quest"))
+            detail:Hide()
+        end)
+    end
+    canShare = (canShare or holder) and true or false
+    detail.share:SetShown(canShare)
 
     -- size to fit
     detail:Show()
@@ -1357,7 +1430,25 @@ function Matrix:Toggle()
     end
 end
 
+--- Open the window on the chain a quest belongs to (from the objective tracker).
+function Matrix:ShowChainFor(questID)
+    if QM:IsQuiet() then return end
+    local chain = QM.Chains:ForQuest(questID)
+    if not chain then
+        QM:Print("that quest isn't part of a chain I know about.")
+        return
+    end
+    if not frame then createFrame() end
+    if list.filter then list.search:SetText("") end
+    if QM.char.collapsedZones then QM.char.collapsedZones[chain.zoneName or "?"] = nil end
+    selectedKey = chain.key
+    if detail then detail:Hide() end
+    frame:Show()
+    self:Refresh(true)
+end
+
 QM:On("QM_TOGGLE_MATRIX", function() Matrix:Toggle() end)
+QM:On("QM_SHOW_CHAIN", function(_, questID) Matrix:ShowChainFor(questID) end)
 QM:On("QM_PARTY_CHANGED", function() Matrix:Refresh() end)
 QM:On("QM_CHAINS_READY", function() Matrix:Refresh(true) end)
 QM:On("QM_SETTINGS_CHANGED", function()

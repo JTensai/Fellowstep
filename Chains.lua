@@ -375,6 +375,12 @@ function Chains:Status(chain, step, member)
         return S.ACTIVE, { quest = q, objectivesKnown = known }
     end
 
+    -- Their copy hasn't told us yet whether they finished this one. Guessing "not started"
+    -- here made a finished chain look like everyone was on step one, so say we don't know.
+    if done == nil and hasAddon and not member.isPlayer and not member.fake then
+        return S.UNKNOWN
+    end
+
     local function doneOrActive(otherId)
         if Party:IsCompleted(member, otherId) then return true end
         local other = Party:GetQuest(member, otherId)
@@ -410,6 +416,67 @@ function Chains:Status(chain, step, member)
         return S.LEVEL, { level = step.requiredLevel }
     end
     return S.AVAILABLE
+end
+
+--- Every quest id the status of this chain depends on.
+function Chains:AllIds(chain)
+    if chain.allIds then return chain.allIds end
+    local ids, seen = {}, {}
+    local function add(id) if id and not seen[id] then seen[id] = true; ids[#ids + 1] = id end end
+    for _, step in ipairs(chain.steps) do
+        add(step.id)
+        for _, p in ipairs(step.preGroup) do add(p) end
+        for _, p in ipairs(step.preSingle) do add(p) end
+        for _, x in ipairs(step.exclusive) do add(x) end
+        add(step.nextId)
+        add(step.breadcrumbFor)
+    end
+    chain.allIds = ids
+    return ids
+end
+
+--- Ask everyone with the addon which of this chain's quests they've finished.
+function Chains:AskAbout(chain)
+    QM.Party:RequestCompleted(self:AllIds(chain))
+end
+
+local function finishedStatus(status)
+    return status == S.DONE or status == S.SKIPPED or status == S.OTHER or status == S.CLASS
+end
+
+--- Where you stand in a chain compared with the rest of the group.
+--- Returns kind ("same", "behind", "ahead", "unknown" or nil when there's nobody to
+--- compare with), how many steps, and a per-member list { member, count, where }.
+function Chains:Standing(chain)
+    local members = QM.Party:Members()
+    local rows, mine = {}, 0
+    local unknown, lo, hi = false, nil, nil
+    for _, m in ipairs(members) do
+        if QM.Party:HasAddon(m) then
+            local count, where, memberUnknown = 0, nil, false
+            for _, step in ipairs(chain.steps) do
+                local st = self:Status(chain, step, m)
+                if finishedStatus(st) then count = count + 1 end
+                if st == S.UNKNOWN then memberUnknown = true end
+                if not where and (st == S.ACTIVE or st == S.READY) then where = step.name end
+            end
+            rows[#rows + 1] = { member = m, count = count, where = where, unknown = memberUnknown }
+            if m.isPlayer then
+                mine = count
+            else
+                if memberUnknown then unknown = true end
+                lo = math.min(lo or count, count)
+                hi = math.max(hi or count, count)
+            end
+        else
+            rows[#rows + 1] = { member = m, noAddon = true }
+        end
+    end
+    if not lo then return nil, 0, rows end
+    if unknown then return "unknown", 0, rows end
+    if hi > mine then return "behind", hi - mine, rows end
+    if lo < mine then return "ahead", mine - lo, rows end
+    return "same", 0, rows
 end
 
 --- Which prerequisite (by name) is the member missing? For "Missing X" sublabels.

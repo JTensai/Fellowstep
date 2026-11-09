@@ -151,7 +151,7 @@ local CHAR_DEFAULTS = {
     testSize = 5,           -- group size test mode fills up to (2-5)
     minimapHidden = false,
     minimapAngle = 120,     -- degrees around the minimap (120 = the 11 o'clock spot)
-    condense = true,        -- tree: only the quests the party is on (finished and unreached ones tucked away)
+    condense = false,       -- tree: only the quests the party is on (finished and unreached ones tucked away)
     hideSpoilers = true,    -- tree, when not condensed: future quests show as blank boxes
     portraits = false,      -- tree: character portraits instead of class icons
     listCollapsed = false,  -- chain list on the left hidden
@@ -172,6 +172,11 @@ QM:RegisterEvent("ADDON_LOADED", function(_, name)
     FellowstepCharDB = FellowstepCharDB or {}
     applyDefaults(FellowstepDB, ACCOUNT_DEFAULTS)
     applyDefaults(FellowstepCharDB, CHAR_DEFAULTS)
+    -- 0.5: the full chain is the new default; move everyone over once
+    if not FellowstepCharDB.fullChainDefault then
+        FellowstepCharDB.fullChainDefault = true
+        FellowstepCharDB.condense = false
+    end
     -- the old default spot was 200 degrees; move characters still sitting there to the new one
     if FellowstepCharDB.minimapAngle == 200 then FellowstepCharDB.minimapAngle = 120 end
     QM.db = FellowstepDB

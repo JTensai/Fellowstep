@@ -9,6 +9,7 @@
 --   X;questID;reason           quest left the log (reason "t" turned in, "a" anything else)
 --   Q;req;id,id,...            which of these quests have you completed? (whispered)
 --   C;req;id,id,...            the ones I have completed, answering request req (whispered)
+--   P;questID                  please share this quest with me (whispered)
 -- An entry is "questID:state:have/need.have/need".
 
 local _, QM = ...
@@ -149,6 +150,10 @@ function Comm:RequestSnapshot()
     self:SendRaw("R", "GROUP")
 end
 
+function Comm:AskToShare(target, questID)
+    self:SendRaw(("P;%d"):format(questID), "WHISPER", target)
+end
+
 local nextRequest = 0
 local pendingQueries = {} -- [req] = { target, ids }
 
@@ -255,6 +260,16 @@ handlers.Q = function(sender, f)
         if id and QM.Log:IsCompleted(id) then done[#done + 1] = idText end
     end
     Comm:SendRaw(("C;%d;%s"):format(req, table.concat(done, ",")), "WHISPER", sender)
+end
+
+local lastAsk = {}
+handlers.P = function(sender, f)
+    local id = tonumber(f[2])
+    if not id or not QM.Log.active[id] then return end
+    local key = sender .. id
+    if lastAsk[key] and GetTime() - lastAsk[key] < 10 then return end
+    lastAsk[key] = GetTime()
+    QM:Fire("QM_SHARE_REQUESTED", sender, id)
 end
 
 handlers.C = function(sender, f)

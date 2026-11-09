@@ -1,0 +1,195 @@
+-- Fellowstep: Tracker
+-- A small badge next to each quest in Blizzard's objective tracker that says where you
+-- stand in that quest's chain compared with your group:
+--   green check   everyone is on the same step
+--   red  -N       you are N steps behind someone: focus this one
+--   blue +N       you are N steps ahead of someone: hold off
+-- Clicking the badge opens Fellowstep on that chain. Also answers "please share" requests.
+
+local _, QM = ...
+local UI = QM.UI
+
+local Tracker = {}
+QM.Tracker = Tracker
+
+local badges = {} -- [block] = badge
+local RED, BLUE, GREEN, GREY = { 1, 0.35, 0.3 }, { 0.35, 0.65, 1 }, { 0.3, 0.9, 0.3 }, { 0.6, 0.6, 0.6 }
+
+local function inGroup()
+    for _, m in ipairs(QM.Party:Members()) do
+        if not m.isPlayer then return true end
+    end
+    return false
+end
+
+local function showTooltip(badge)
+    local chain = badge.chain
+    if not chain then return end
+    GameTooltip:SetOwner(badge, "ANCHOR_LEFT")
+    GameTooltip:SetText(chain.title, 1, 0.82, 0)
+    local kind, n = badge.kind, badge.n
+    if kind == "same" then
+        GameTooltip:AddLine("Everyone is on the same step.", GREEN[1], GREEN[2], GREEN[3], true)
+    elseif kind == "behind" then
+        GameTooltip:AddLine(("You're %d %s behind. Focus on this one."):format(n, n == 1 and "step" or "steps"), RED[1], RED[2], RED[3], true)
+    elseif kind == "ahead" then
+        GameTooltip:AddLine(("You're %d %s ahead. Hold off so the others can catch up."):format(n, n == 1 and "step" or "steps"), BLUE[1], BLUE[2], BLUE[3], true)
+    else
+        GameTooltip:AddLine("Still asking the group where they are.", GREY[1], GREY[2], GREY[3], true)
+    end
+    GameTooltip:AddLine(" ")
+    local total = #chain.steps
+    for _, r in ipairs(badge.rows or {}) do
+        local name = r.member.isPlayer and "You" or QM.ShortName(r.member.name)
+        local right
+        if r.noAddon then
+            right = "|cff999999no Fellowstep|r"
+        elseif r.unknown then
+            right = "|cff999999asking...|r"
+        else
+            right = ("%d/%d done%s"):format(r.count, total, r.where and (" · on " .. r.where) or "")
+        end
+        GameTooltip:AddDoubleLine(name, right, 1, 1, 1, 0.85, 0.85, 0.85)
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Click to open this chain in Fellowstep", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+end
+
+local function getBadge(block)
+    local b = badges[block]
+    if b then return b end
+    b = CreateFrame("Button", nil, block)
+    b:SetSize(26, 14)
+    b:SetFrameLevel(block:GetFrameLevel() + 5)
+    b.icon = b:CreateTexture(nil, "OVERLAY")
+    b.icon:SetSize(14, 14)
+    b.icon:SetPoint("RIGHT")
+    b.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.text:SetPoint("RIGHT")
+    b:RegisterForClicks("LeftButtonUp")
+    b:SetScript("OnClick", function(self)
+        if self.questID then QM:Fire("QM_SHOW_CHAIN", self.questID) end
+    end)
+    b:SetScript("OnEnter", showTooltip)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    badges[block] = b
+    return b
+end
+
+local function paint(block, questID)
+    local chain = QM.Chains:ForQuest(questID)
+    local kind, n, rows
+    if chain then
+        QM.Chains:AskAbout(chain)
+        kind, n, rows = QM.Chains:Standing(chain)
+    end
+    local b = badges[block]
+    if not kind then
+        if b then b:Hide() end
+        return
+    end
+    b = getBadge(block)
+    b.questID, b.chain, b.kind, b.n, b.rows = questID, chain, kind, n, rows
+    b:ClearAllPoints()
+    local header = block.HeaderText
+    if header then
+        b:SetPoint("RIGHT", block, "TOPRIGHT", -2, -((header.GetLineHeight and header:GetLineHeight()) or 12) / 2 - 1)
+    else
+        b:SetPoint("TOPRIGHT", block, "TOPRIGHT", -2, 0)
+    end
+    if kind == "same" then
+        b.icon:Show(); b.text:Hide()
+    else
+        b.icon:Hide(); b.text:Show()
+        local c = kind == "behind" and RED or kind == "ahead" and BLUE or GREY
+        b.text:SetText(kind == "behind" and ("-" .. n) or kind == "ahead" and ("+" .. n) or "...")
+        b.text:SetTextColor(c[1], c[2], c[3])
+    end
+    b:Show()
+end
+
+-- Blizzard's tracker keeps its quest blocks in module.usedBlocks, either flat
+-- ([id] = block) or by template ([template][id] = block) depending on the client.
+local function eachBlock(fn)
+    local modules = {
+        _G.QuestObjectiveTracker, _G.CampaignQuestObjectiveTracker,
+        _G.QUEST_TRACKER_MODULE, _G.CAMPAIGN_QUEST_TRACKER_MODULE,
+    }
+    for _, module in pairs(modules) do
+        local used = type(module) == "table" and module.usedBlocks
+        if type(used) == "table" then
+            for k, v in pairs(used) do
+                if type(v) == "table" and v.GetObjectType then
+                    fn(v, v.id or k)
+                elseif type(v) == "table" then
+                    for id, block in pairs(v) do
+                        if type(block) == "table" and block.GetObjectType then fn(block, block.id or id) end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Tracker:Refresh()
+    for _, b in pairs(badges) do b:Hide() end
+    if QM:IsQuiet() or not inGroup() then return end
+    eachBlock(function(block, id)
+        if type(id) == "number" and block:IsShown() then paint(block, id) end
+    end)
+end
+
+-- Redraw soon after anything changes, at most a few times a second.
+local pending = false
+local function refreshSoon()
+    if pending then return end
+    pending = true
+    C_Timer.After(0.3, function()
+        pending = false
+        local ok, err = pcall(Tracker.Refresh, Tracker)
+        if not ok then QM:Debug("tracker refresh failed", err) end
+    end)
+end
+Tracker.RefreshSoon = refreshSoon
+
+QM:On("QM_LOGIN", function()
+    -- the tracker redraws on its own schedule; hook it so badges follow its blocks
+    for _, name in ipairs({ "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }) do
+        local module = _G[name]
+        if type(module) == "table" then
+            for _, method in ipairs({ "Update", "LayoutContents" }) do
+                if type(module[method]) == "function" then hooksecurefunc(module, method, refreshSoon) end
+            end
+        end
+    end
+    if type(_G.ObjectiveTracker_Update) == "function" then hooksecurefunc("ObjectiveTracker_Update", refreshSoon) end
+    refreshSoon()
+end)
+QM:On("QM_PARTY_CHANGED", refreshSoon)
+QM:On("QM_LOG_CHANGED", refreshSoon)
+QM:On("QM_SETTINGS_CHANGED", refreshSoon)
+QM:On("QM_CHAINS_READY", refreshSoon)
+
+---------------------------------------------------------------------------
+-- "Please share" requests from the group
+---------------------------------------------------------------------------
+StaticPopupDialogs["FELLOWSTEP_SHARE_REQUEST"] = {
+    text = "%s asks you to share:\n|cffffd100%s|r",
+    button1 = "Share",
+    button2 = "Not now",
+    OnAccept = function(_, data)
+        if data and data.questID then UI.ShareQuest(data.questID) end
+    end,
+    timeout = 30,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+QM:On("QM_SHARE_REQUESTED", function(_, sender, questID)
+    local name = QM.Chains:QuestName(questID) or ("quest " .. questID)
+    local popup = StaticPopup_Show("FELLOWSTEP_SHARE_REQUEST", QM.ShortName(sender), name)
+    if popup then popup.data = { questID = questID } end
+end)
