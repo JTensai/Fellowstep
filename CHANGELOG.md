@@ -1,5 +1,10 @@
 # Fellowstep
 
+## 0.5.1
+- Class quests only compare players who can take them. Chains your class can't do sit in a folded "Not for your class" section at the bottom of the list.
+- Quests from another chain that a step needs first now show in the tree, in blue. Click one to open its chain.
+- "Not unlocked yet" now says which quest is needed first.
+
 ## 0.5.0
 - Badges in the quest tracker: green check when the group is on the same step, red -N when you're behind, blue +N when you're ahead. Click one to open that chain.
 - Search box for quest names.
