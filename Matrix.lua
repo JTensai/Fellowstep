@@ -20,6 +20,8 @@ local HEAD = 46       -- header band above the panels: chain title, legend, coll
 local HUD_BOTTOM = 28 -- fixed catch-up line over the bottom
 local AVATAR = 22
 
+local OTHER_CLASS = "Not for your class"
+local pinnedChain -- a chain opened from elsewhere that nobody in the group is on yet
 local frame, list, tree, detail
 local selectedKey
 local chains = {}
@@ -43,6 +45,7 @@ local LOOK = {
 local function statusLabel(status, info)
     local look = LOOK[status] or LOOK[S.UNKNOWN]
     if status == S.LEVEL then return look.label:format(info and info.level or 0) end
+    if status == S.BLOCKED and info and info.missingName then return "Needs " .. info.missingName .. " first" end
     return look.label
 end
 
@@ -650,7 +653,8 @@ end
 -- Chain list
 ---------------------------------------------------------------------------
 local function chainSummary(chain)
-    local members = QM.Party:Members()
+    local members = QM.Chains:MembersFor(chain)
+    local playerOut = not QM.Chains:CanDo(chain, members[1])
     local statuses, counts = {}, {}
     local unknown = false
     for mi, m in ipairs(members) do
@@ -665,12 +669,18 @@ local function chainSummary(chain)
         counts[mi] = count
     end
     local top = 0
-    for _, c in ipairs(counts) do top = math.max(top, c) end
+    for mi, c in ipairs(counts) do
+        if not (playerOut and members[mi].isPlayer) then top = math.max(top, c) end
+    end
     -- per-member detail for the hover preview
     local people, anyBehind = {}, false
     for mi, m in ipairs(members) do
         local p = { member = m, count = counts[mi], addon = QM.Party:HasAddon(m) }
-        if counts[mi] < top and p.addon then p.behind = top - counts[mi]; anyBehind = true end
+        if playerOut and m.isPlayer then
+            p.notForYou = true
+        elseif counts[mi] < top and p.addon then
+            p.behind = top - counts[mi]; anyBehind = true
+        end
         for si, step in ipairs(chain.steps) do
             local st = statuses[mi][si]
             if isOnIt(st) then p.where = "On " .. (step.name or "?") break end
@@ -684,7 +694,7 @@ local function chainSummary(chain)
         flag, flagColor = "Out of sync", UI.C.red
     elseif unknown then
         flag, flagColor = "Some unknown", UI.C.muted or { 0.6, 0.6, 0.6 }
-    elseif #members < 2 then
+    elseif #members - (playerOut and 1 or 0) < 2 then
         flag = nil
     else
         flag, flagColor = "In sync", UI.C.green
@@ -707,7 +717,9 @@ local function showChainTooltip(row)
         GameTooltip:AddLine(" ")
         for _, p in ipairs(people) do
             local right
-            if not p.addon and not p.member.isPlayer then
+            if p.notForYou then
+                right = "|cff999999not for your class|r"
+            elseif not p.addon and not p.member.isPlayer then
                 right = "|cff999999no addon|r"
             else
                 right = ("%d/%d · %s"):format(p.count, #chain.steps, p.where)
@@ -752,6 +764,7 @@ local function listRow(index)
     row:SetScript("OnClick", function(self)
         if list.scroll:EndDrag() then return end
         selectedKey = self.key
+        if pinnedChain and pinnedChain.key ~= self.key then pinnedChain = nil end
         if detail then detail:Hide() end
         Matrix:Refresh(true)
     end)
@@ -808,13 +821,22 @@ local function zoneHeader(index, content)
     h:SetScript("OnMouseDown", function() list.scroll:BeginDrag() end)
     h:SetScript("OnClick", function(self)
         if list.scroll:EndDrag() then return end
-        local closed = QM.char.collapsedZones
-        closed[self.zone] = not closed[self.zone] or nil
+        if self.zone == OTHER_CLASS then
+            QM.char.showOtherClass = not QM.char.showOtherClass or nil
+        else
+            local closed = QM.char.collapsedZones
+            closed[self.zone] = not closed[self.zone] or nil
+        end
         Matrix:RefreshList()
     end)
     h:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(QM.char.collapsedZones[self.zone] and "Click to show this zone's chains" or "Click to hide this zone's chains", 1, 1, 1)
+        if self.zone == OTHER_CLASS then
+            GameTooltip:SetText("Class quests your character can't take", 1, 1, 1)
+            GameTooltip:AddLine("Here so you can still see where the rest of the group is on them.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:SetText(QM.char.collapsedZones[self.zone] and "Click to show this zone's chains" or "Click to hide this zone's chains", 1, 1, 1)
+        end
         GameTooltip:Show()
     end)
     h:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -834,6 +856,11 @@ end
 
 local function groupChains()
     local all = QM.Chains:ForGroup()
+    if pinnedChain then
+        local present = false
+        for _, c in ipairs(all) do if c.key == pinnedChain.key then present = true end end
+        if not present then table.insert(all, pinnedChain) end
+    end
     for _, chain in ipairs(all) do QM.Chains:AskAbout(chain) end
     local filter = list and list.filter
     if not filter then return all end
@@ -846,6 +873,15 @@ end
 
 function Matrix:RefreshList()
     chains = groupChains()
+    -- chains you can't do (another class's quests) go last, under their own folded header
+    local mine, notMine = {}, {}
+    local me = QM.Party:Members()[1]
+    for _, chain in ipairs(chains) do
+        chain.otherClass = (me and not QM.Chains:CanDo(chain, me)) or nil
+        if chain.otherClass then notMine[#notMine + 1] = chain else mine[#mine + 1] = chain end
+    end
+    for _, chain in ipairs(notMine) do mine[#mine + 1] = chain end
+    chains = mine
     if list.empty then
         list.empty:SetText(list.filter and ("No party quests match \"%s\"."):format(list.filter) or "")
         list.empty:SetShown(list.filter ~= nil and #chains == 0)
@@ -861,13 +897,14 @@ function Matrix:RefreshList()
     QM.char.collapsedZones = QM.char.collapsedZones or {}
     local closed = QM.char.collapsedZones
     local zoneCount = {}
+    local function zoneOf(chain) return chain.otherClass and OTHER_CLASS or (chain.zoneName or "?") end
     for _, chain in ipairs(chains) do
-        local z = chain.zoneName or "?"
+        local z = zoneOf(chain)
         zoneCount[z] = (zoneCount[z] or 0) + 1
         if chain.key == selectedKey then found = true end
     end
     for _, chain in ipairs(chains) do
-        local zone = chain.zoneName or "?"
+        local zone = zoneOf(chain)
         if zone ~= lastZone then
             lastZone = zone
             hi = hi + 1
@@ -876,11 +913,15 @@ function Matrix:RefreshList()
             h:SetPoint("TOPLEFT", 0, -y)
             h.zone = zone
             h.text:SetText(("%s (%d)"):format(zone, zoneCount[zone]))
-            h.toggle:SetTexture(closed[zone] and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
+            local isFolded = closed[zone]
+            if zone == OTHER_CLASS then isFolded = not QM.char.showOtherClass end
+            h.toggle:SetTexture(isFolded and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
             h:Show()
             y = y + 24
         end
-        if closed[zone] and not list.filter then
+        local folded = closed[zone]
+        if zone == OTHER_CLASS then folded = not QM.char.showOtherClass end
+        if folded and not list.filter then
             -- zone folded away: skip its chains
         else
         ri = ri + 1
@@ -897,7 +938,7 @@ function Matrix:RefreshList()
         local sync = flag and (" · " .. UI.Hex(flagColor) .. flag .. "|r") or ""
         row.meta:SetText(("%d %s%s%s"):format(#chain.steps, #chain.steps == 1 and "quest" or "quests", levels, sync))
         drawSegments(row, statuses, #chain.steps)
-        local gridH = #members * 7
+        local gridH = #statuses * 7
         local nameH = math.max(14, row.name:GetStringHeight() or 14)
         local thisHeight = 6 + nameH + 3 + 12 + 6 + gridH + 8
         row:SetHeight(thisHeight)
@@ -945,6 +986,10 @@ local function createNode(canvas)
     function n:OnMouseDownPass() tree.view:BeginDrag() end
     function n:OnClickPass()
         if tree.view:EndDrag() then return end -- that was a drag, not a click
+        if self.external then
+            Matrix:ShowChainFor(self.external)
+            return
+        end
         if detail:IsShown() and detail.anchor == self then detail:Hide() return end
         Matrix:ShowDetail(self)
     end
@@ -957,7 +1002,12 @@ local function createNode(canvas)
         for _, row in ipairs(self.rows or {}) do
             GameTooltip:AddDoubleLine(coloredName(row.member), row.text, 1, 1, 1, 1, 1, 1)
         end
-        GameTooltip:AddLine("Click for options", 0.6, 0.6, 0.6)
+        if self.external then
+            GameTooltip:AddLine("Part of a different quest chain. It has to be done before the quest it points to.", 0.55, 0.75, 1, true)
+            GameTooltip:AddLine("Click to open that chain", 0.6, 0.6, 0.6)
+        else
+            GameTooltip:AddLine("Click for options", 0.6, 0.6, 0.6)
+        end
         GameTooltip:Show()
     end)
     n:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1025,7 +1075,8 @@ function Matrix:RefreshTree(jump)
     end
     tree.view:Show()
 
-    local members = QM.Party:Members()
+    -- you, plus everyone who can do this chain (class quests leave the others out)
+    local members = QM.Chains:MembersFor(chain)
     drawLegend(members)
 
     tree.title:SetText(chain.title)
@@ -1134,7 +1185,23 @@ function Matrix:RefreshTree(jump)
             pos[step.id] = { x = x0 + (i - 1) * (NODE_W + GAP_X), y = topPad + (r - 1) * (NODE_H + GAP_Y) }
         end
     end
-    local contentH = topPad + #depths * (NODE_H + GAP_Y) - GAP_Y + PAD + HUD_BOTTOM + (tree.morePill:IsShown() and 30 or 0)
+    -- quests from other chains that a step here needs first: a row above, linked in blue
+    local outside = {}
+    for _, o in ipairs(QM.Chains:OutsidePrereqs(chain)) do
+        if pos[o.child] then outside[#outside + 1] = o end
+    end
+    if #outside > 0 then
+        for _, step in ipairs(visible) do pos[step.id].y = pos[step.id].y + NODE_H + GAP_Y end
+        table.sort(outside, function(a, b) return pos[a.child].x < pos[b.child].x end)
+        local rowW = #outside * (NODE_W + GAP_X) - GAP_X
+        if rowW + PAD * 2 > contentW then contentW = rowW + PAD * 2 end
+        local x0 = (contentW - rowW) / 2
+        for i, o in ipairs(outside) do
+            o.x, o.y = x0 + (i - 1) * (NODE_W + GAP_X), topPad
+        end
+    end
+    local rowsH = (#depths + (#outside > 0 and 1 or 0)) * (NODE_H + GAP_Y) - GAP_Y
+    local contentH = topPad + rowsH + PAD + HUD_BOTTOM + (tree.morePill:IsShown() and 30 or 0)
     local canvas = tree.view.child
     canvas:SetSize(contentW, contentH)
 
@@ -1148,6 +1215,7 @@ function Matrix:RefreshTree(jump)
             tree.nodes[i] = n
         end
         nodeFor[step.id] = n
+        n.external = nil
         local p = pos[step.id]
         n:ClearAllPoints()
         n:SetPoint("TOPLEFT", canvas, "TOPLEFT", p.x, -p.y)
@@ -1248,6 +1316,60 @@ function Matrix:RefreshTree(jump)
                     end
                     l:Show()
                 end
+            end
+        end
+    end
+
+    -- outside prerequisite nodes
+    for oi, o in ipairs(outside) do
+        local i = #visible + oi
+        local n = tree.nodes[i]
+        if not n then
+            n = createNode(canvas)
+            tree.nodes[i] = n
+        end
+        n:ClearAllPoints()
+        n:SetPoint("TOPLEFT", canvas, "TOPLEFT", o.x, -o.y)
+        n:EnableMouse(true)
+        n.external, n.chain = o.id, nil
+        n.step = { id = o.id, name = o.name }
+        UI.PaintCell(n, "LINKED")
+        local mineDone = QM.Party:IsCompleted(members[1], o.id)
+        n.icon:SetKind(mineDone and "DONE" or (QM.Log.active[o.id] and "ACTIVE" or "BLOCKED"))
+        n.name:SetText(o.name)
+        local lc = UI.C.linked or { 0.55, 0.75, 1 }
+        n.name:SetTextColor(lc[1], lc[2], lc[3])
+        n.meta:SetText("From another chain · needed for this one")
+        n.rows = {}
+        local shown = 0
+        for _, m in ipairs(members) do
+            local done = QM.Party:IsCompleted(m, o.id)
+            local q = QM.Party:GetQuest(m, o.id)
+            local text = done and "Completed" or (q and "In progress") or (done == false and "Not done yet") or "Unknown"
+            n.rows[#n.rows + 1] = { member = m, text = text }
+            if q then
+                shown = shown + 1
+                local a = n.avatars[shown]
+                if not a then a = createAvatar(n); n.avatars[shown] = a end
+                a:SetFrameLevel(n:GetFrameLevel() + 3)
+                a:ClearAllPoints()
+                a:SetPoint("CENTER", n, "BOTTOMRIGHT", -12 - (shown - 1) * (AVATAR - 4), 1)
+                paintAvatar(a, m, "ACTIVE")
+                a.text = text
+                a:Show()
+            end
+        end
+        for k = shown + 1, #n.avatars do n.avatars[k]:Hide() end
+        n:Show()
+        local to = nodeFor[o.child]
+        if to then
+            li = li + 1
+            local l = getLine(li, canvas)
+            if l then
+                l:SetStartPoint("BOTTOM", n, 0, 0)
+                l:SetEndPoint("TOP", to, 0, 0)
+                l:SetColorTexture(lc[1], lc[2], lc[3], 0.7)
+                l:Show()
             end
         end
     end
@@ -1440,6 +1562,8 @@ function Matrix:ShowChainFor(questID)
     end
     if not frame then createFrame() end
     if list.filter then list.search:SetText("") end
+    pinnedChain = chain
+    if not QM.Chains:CanDo(chain, QM.Party:Members()[1]) then QM.char.showOtherClass = true end
     if QM.char.collapsedZones then QM.char.collapsedZones[chain.zoneName or "?"] = nil end
     selectedKey = chain.key
     if detail then detail:Hide() end

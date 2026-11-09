@@ -397,19 +397,19 @@ function Chains:Status(chain, step, member)
 
     if not hasAddon then return S.UNKNOWN end
 
-    -- prerequisites
-    local met = true
+    -- prerequisites (remember which one is missing, so we can name it)
+    local missing
     for _, p in ipairs(step.preGroup) do
-        if not Party:IsCompleted(member, p) then met = false end
+        if not missing and not Party:IsCompleted(member, p) then missing = p end
     end
-    if met and #step.preSingle > 0 then
+    if not missing and #step.preSingle > 0 then
         local any = false
         for _, p in ipairs(step.preSingle) do
             if Party:IsCompleted(member, p) then any = true end
         end
-        met = any
+        if not any then missing = step.preSingle[1] end
     end
-    if not met then return S.BLOCKED end
+    if missing then return S.BLOCKED, { missing = missing, missingName = self:QuestName(missing) } end
 
     local level = Party:Level(member)
     if step.requiredLevel and level < step.requiredLevel then
@@ -440,6 +440,41 @@ function Chains:AskAbout(chain)
     QM.Party:RequestCompleted(self:AllIds(chain))
 end
 
+--- Can this member ever do any quest in the chain? (Class-only chains are not for everyone.)
+function Chains:CanDo(chain, member)
+    local classID = QM.Party:ClassID(member)
+    for _, step in ipairs(chain.steps) do
+        if classAllowed(step.requiredClasses, classID) then return true end
+    end
+    return false
+end
+
+--- The members to compare in this chain: you first, then everyone else who can do it.
+--- You stay in even when it isn't for you, so you can still see where the others are.
+function Chains:MembersFor(chain)
+    local out = {}
+    for _, m in ipairs(QM.Party:Members()) do
+        if m.isPlayer or self:CanDo(chain, m) then out[#out + 1] = m end
+    end
+    return out
+end
+
+--- Quests outside the chain that a step needs first: { id, name, child = stepId }.
+function Chains:OutsidePrereqs(chain)
+    local out, seen = {}, {}
+    for _, step in ipairs(chain.steps) do
+        for _, list in ipairs({ step.preGroup, step.preSingle }) do
+            for _, p in ipairs(list) do
+                if not chain.byId[p] and not seen[p] then
+                    seen[p] = true
+                    out[#out + 1] = { id = p, name = self:QuestName(p), child = step.id }
+                end
+            end
+        end
+    end
+    return out
+end
+
 local function finishedStatus(status)
     return status == S.DONE or status == S.SKIPPED or status == S.OTHER or status == S.CLASS
 end
@@ -452,7 +487,9 @@ function Chains:Standing(chain)
     local rows, mine = {}, 0
     local unknown, lo, hi = false, nil, nil
     for _, m in ipairs(members) do
-        if QM.Party:HasAddon(m) then
+        if not m.isPlayer and not self:CanDo(chain, m) then
+            -- a class quest they can't take: leave them out of the comparison
+        elseif QM.Party:HasAddon(m) then
             local count, where, memberUnknown = 0, nil, false
             for _, step in ipairs(chain.steps) do
                 local st = self:Status(chain, step, m)
