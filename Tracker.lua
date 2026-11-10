@@ -48,7 +48,7 @@ local function showTooltip(badge)
         elseif r.unknown then
             right = "|cff999999asking...|r"
         else
-            right = ("%d/%d done%s"):format(r.count, total, r.where and (" · on " .. r.where) or "")
+            right = ("%d/%d done%s"):format(r.count, total, r.where and (" · on " .. r.where) or (r.next and (" · " .. r.next) or ""))
         end
         GameTooltip:AddDoubleLine(name, right, 1, 1, 1, 0.85, 0.85, 0.85)
     end

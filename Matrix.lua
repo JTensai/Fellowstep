@@ -655,21 +655,24 @@ end
 local function chainSummary(chain)
     local members = QM.Chains:MembersFor(chain)
     local playerOut = not QM.Chains:CanDo(chain, members[1])
-    local statuses, counts = {}, {}
+    -- counts: finished quests. positions: finished quests plus a half for a quest in the
+    -- log, so "has it" vs "hasn't picked it up" reads as out of sync, not both as zero.
+    local statuses, counts, positions = {}, {}, {}
     local unknown = false
     for mi, m in ipairs(members) do
         statuses[mi] = {}
-        local count = 0
+        local count, position = 0, 0
         for si, step in ipairs(chain.steps) do
             local status = QM.Chains:Status(chain, step, m)
             statuses[mi][si] = status
-            if isFinished(status) then count = count + 1 end
+            if isFinished(status) then count = count + 1; position = position + 1 end
+            if isOnIt(status) then position = position + 0.5 end
             if status == S.UNKNOWN then unknown = true end
         end
-        counts[mi] = count
+        counts[mi], positions[mi] = count, position
     end
     local top = 0
-    for mi, c in ipairs(counts) do
+    for mi, c in ipairs(positions) do
         if not (playerOut and members[mi].isPlayer) then top = math.max(top, c) end
     end
     -- per-member detail for the hover preview
@@ -678,13 +681,16 @@ local function chainSummary(chain)
         local p = { member = m, count = counts[mi], addon = QM.Party:HasAddon(m) }
         if playerOut and m.isPlayer then
             p.notForYou = true
-        elseif counts[mi] < top and p.addon then
-            p.behind = top - counts[mi]; anyBehind = true
+        elseif positions[mi] < top and p.addon then
+            p.behind = math.ceil(top - positions[mi]); anyBehind = true
         end
         for si, step in ipairs(chain.steps) do
             local st = statuses[mi][si]
             if isOnIt(st) then p.where = "On " .. (step.name or "?") break end
-            if not p.where and not isFinished(st) then p.where = "Next: " .. (step.name or "?") break end
+            if st == S.LEVEL and step.requiredLevel then
+                p.where = ("Needs level %d for %s"):format(step.requiredLevel, step.name or "?") break
+            end
+            if not isFinished(st) then p.where = "Next: " .. (step.name or "?") break end
         end
         p.where = p.where or "Finished"
         people[mi] = p
