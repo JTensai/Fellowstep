@@ -212,7 +212,7 @@ end
 
 SLASH_FELLOWSTEP1 = "/fs"
 SLASH_FELLOWSTEP2 = "/fellowstep"
-SlashCmdList.QUESTMATRIX = function(msg)
+SlashCmdList.FELLOWSTEP = function(msg)
     local cmd = strtrim((msg or ""):lower())
     if cmd == "" then
         if QM:IsQuiet() then
