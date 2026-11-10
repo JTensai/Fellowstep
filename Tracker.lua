@@ -1,5 +1,6 @@
 -- Fellowstep: Tracker
--- A small badge next to each quest in Blizzard's objective tracker that says where you
+-- A small badge next to each quest in Blizzard's objective tracker (and the quest list
+-- beside the world map) that says where you
 -- stand in that quest's chain compared with your group:
 --   green check   everyone is on the same step
 --   red  -N       you are N steps behind someone: focus this one
@@ -63,7 +64,7 @@ function Tracker.RightInset()
     return 0
 end
 
-local function getBadge(block)
+local function getBadge(block, centered)
     local b = badges[block]
     if b then return b end
     b = CreateFrame("Button", nil, block)
@@ -71,10 +72,10 @@ local function getBadge(block)
     b:SetFrameLevel(block:GetFrameLevel() + 5)
     b.icon = b:CreateTexture(nil, "OVERLAY")
     b.icon:SetSize(14, 14)
-    b.icon:SetPoint("RIGHT")
+    b.icon:SetPoint(centered and "CENTER" or "RIGHT")
     b.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
     b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    b.text:SetPoint("RIGHT")
+    b.text:SetPoint(centered and "CENTER" or "RIGHT")
     b:RegisterForClicks("LeftButtonUp")
     b:SetScript("OnClick", function(self)
         if self.questID then QM:Fire("QM_SHOW_CHAIN", self.questID) end
@@ -85,7 +86,9 @@ local function getBadge(block)
     return b
 end
 
-local function paint(block, questID)
+--- Badge on one frame for one quest. place(badge, frame) positions it; centered draws
+--- the mark centered in the badge instead of against its right edge.
+local function paint(block, questID, place, centered)
     local chain = QM.Chains:ForQuest(questID)
     local kind, n, rows
     if chain then
@@ -97,12 +100,16 @@ local function paint(block, questID)
         if b then b:Hide() end
         return
     end
-    b = getBadge(block)
+    b = getBadge(block, centered)
     b.questID, b.chain, b.kind, b.n, b.rows = questID, chain, kind, n, rows
     b:ClearAllPoints()
-    -- top right of the title, left of anything else in that corner
-    -- (Spoken puts a 14px Play button at the block's top right)
-    b:SetPoint("TOPRIGHT", block, "TOPRIGHT", -Tracker.RightInset(), 0)
+    if place then
+        place(b, block)
+    else
+        -- top right of the title, left of anything else in that corner
+        -- (Spoken puts a 14px Play button at the block's top right)
+        b:SetPoint("TOPRIGHT", block, "TOPRIGHT", -Tracker.RightInset(), 0)
+    end
     if kind == "same" then
         b.icon:Show(); b.text:Hide()
     else
@@ -137,11 +144,27 @@ local function eachBlock(fn)
     end
 end
 
+-- The quest list beside the world map: pooled title rows with .questID. The badge sits in
+-- the empty gutter under the row's quest icon, clear of the title, the checkbox and any
+-- other addon's buttons at the row's right end.
+local function placeInLog(b, row)
+    b:SetPoint("TOP", row, "TOPLEFT", 14, -24)
+end
+
+local function eachLogRow(fn)
+    local pool = _G.QuestScrollFrame and _G.QuestScrollFrame.titleFramePool
+    if not (pool and pool.EnumerateActive) then return end
+    for row in pool:EnumerateActive() do fn(row, row.questID) end
+end
+
 function Tracker:Refresh()
     for _, b in pairs(badges) do b:Hide() end
     if QM:IsQuiet() or not inGroup() then return end
     eachBlock(function(block, id)
         if type(id) == "number" and block:IsShown() then paint(block, id) end
+    end)
+    eachLogRow(function(row, id)
+        if type(id) == "number" and row:IsShown() then paint(row, id, placeInLog, true) end
     end)
 end
 
@@ -169,6 +192,7 @@ QM:On("QM_LOGIN", function()
         end
     end
     if type(_G.ObjectiveTracker_Update) == "function" then hooksecurefunc("ObjectiveTracker_Update", refreshSoon) end
+    if type(_G.QuestLogQuests_Update) == "function" then hooksecurefunc("QuestLogQuests_Update", refreshSoon) end
     refreshSoon()
 end)
 QM:On("QM_PARTY_CHANGED", refreshSoon)
