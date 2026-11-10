@@ -1,5 +1,10 @@
 # Fellowstep
 
+## 0.5.2
+- Badges on the quest list beside the world map too.
+- Fix "In sync" when one player has a quest and another hasn't picked it up (or isn't high enough level yet).
+- Fix /fs and /fellowstep doing nothing.
+
 ## 0.5.1
 - Class quests only compare players who can take them. Chains your class can't do sit in a folded "Not for your class" section at the bottom of the list.
 - Quests from another chain that a step needs first now show in the tree, in blue. Click one to open its chain.
