@@ -1,5 +1,8 @@
 # Fellowstep
 
+## 0.5.5
+- Fix the "tried to call the protected function QuestLogPushQuest" error. The game only lets you click its own Share button, so Share now opens the quest in your quest log with that button highlighted.
+
 ## 0.5.4
 - Zone headers show how many quests you can share ("2 to share") and how many others can share with you ("1 for you").
 - Chains get a Share button when a party member can take a quest you have, or an Ask button when someone has one you can take. Go down the list and click.
