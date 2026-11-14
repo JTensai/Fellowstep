@@ -10,7 +10,7 @@ do
     local v = getMeta and getMeta(ADDON_NAME, "Version")
     QM.version = (v and not v:find("@", 1, true)) and v or "dev"
 end
-QM.protocolVersion = 1
+QM.protocolVersion = 2 -- 2: group completion queries (K/B)
 
 ---------------------------------------------------------------------------
 -- Messages between our own modules (not network)

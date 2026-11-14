@@ -10,6 +10,9 @@
 --   Q;req;id,id,...            which of these quests have you completed? (whispered)
 --   C;req;id,id,...            the ones I have completed, answering request req (whispered)
 --   P;questID                  please share this quest with me (whispered)
+--   K;req;ids                  protocol 2: everyone, which of these have you completed? ids are
+--                              sorted, delta-coded in base 36, "." separated
+--   B;req;bits                 protocol 2 answer (whispered): one bit per asked id, 6 per character
 -- An entry is "questID:state:have/need.have/need".
 
 local _, QM = ...
@@ -24,7 +27,7 @@ local MAX_PAYLOAD = 190 -- leaves room for the "T;name;" header on directed mess
 -- Throttled send queue (the server allows short bursts, then about 1 per second)
 ---------------------------------------------------------------------------
 local queue = {}
-local tokens, MAX_TOKENS, REGEN = 6, 6, 1.0
+local tokens, MAX_TOKENS, REGEN = 10, 10, 1.0
 local lastRegen = GetTime()
 
 local function groupChannel()
@@ -155,7 +158,101 @@ function Comm:AskToShare(target, questID)
 end
 
 local nextRequest = 0
-local pendingQueries = {} -- [req] = { target, ids }
+local pendingQueries = {} -- [req] = { target, ids } (target nil: asked the whole group)
+local pendingOrder = {}
+
+local function remember(req, entry)
+    pendingQueries[req] = entry
+    pendingOrder[#pendingOrder + 1] = req
+    -- group questions get several answers, so they stay around; keep only the recent ones
+    while #pendingOrder > 200 do pendingQueries[table.remove(pendingOrder, 1)] = nil end
+end
+
+---------------------------------------------------------------------------
+-- Compact encodings (protocol 2)
+---------------------------------------------------------------------------
+local B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+local function toBase36(n)
+    if n == 0 then return "0" end
+    local out = ""
+    while n > 0 do
+        local d = n % 36
+        out = B36:sub(d + 1, d + 1) .. out
+        n = math.floor(n / 36)
+    end
+    return out
+end
+
+--- Sorted ids as base-36 gaps: 3201,3202,3250 -> "2ep.1.1d"
+function Comm.EncodeIds(ids)
+    local parts, last = {}, 0
+    for _, id in ipairs(ids) do
+        parts[#parts + 1] = toBase36(id - last)
+        last = id
+    end
+    return table.concat(parts, ".")
+end
+
+function Comm.DecodeIds(text)
+    local ids, last = {}, 0
+    for piece in (text or ""):gmatch("[0-9a-z]+") do
+        local gap = tonumber(piece, 36)
+        if gap then
+            last = last + gap
+            ids[#ids + 1] = last
+        end
+    end
+    return ids
+end
+
+-- 6 bits per character; no ";" or "|" (both mean something in chat)
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+function Comm.EncodeBits(bits, n)
+    local out = {}
+    for i = 1, n, 6 do
+        local v = 0
+        for k = 0, 5 do
+            if bits[i + k] then v = v + 2 ^ k end
+        end
+        out[#out + 1] = B64:sub(v + 1, v + 1)
+    end
+    return table.concat(out)
+end
+
+function Comm.DecodeBits(text, n)
+    local bits = {}
+    for c = 1, #(text or "") do
+        local v = (B64:find(text:sub(c, c), 1, true) or 1) - 1
+        for k = 0, 5 do
+            local i = (c - 1) * 6 + k + 1
+            if i <= n then bits[i] = (math.floor(v / 2 ^ k) % 2) == 1 end
+        end
+    end
+    return bits
+end
+
+--- Ask everyone in the group at once which of these quests they have completed
+--- (protocol 2 peers). Each answers with a bitmask in one message.
+function Comm:QueryCompletedGroup(ids)
+    table.sort(ids)
+    local batch, size = {}, 0
+    local last = 0
+    local function flush()
+        if #batch == 0 then return end
+        nextRequest = (nextRequest % 9999) + 1
+        remember(nextRequest, { ids = batch })
+        self:SendRaw(("K;%d;%s"):format(nextRequest, Comm.EncodeIds(batch)), "GROUP")
+        batch, size, last = {}, 0, 0
+    end
+    for _, id in ipairs(ids) do
+        local piece = #toBase36(id - last) + 1
+        if size + piece > MAX_PAYLOAD - 12 then flush(); piece = #toBase36(id) + 1 end
+        batch[#batch + 1] = id
+        size = size + piece
+        last = id
+    end
+    flush()
+end
 
 --- Ask one player which of these quests they have completed.
 function Comm:QueryCompleted(target, ids)
@@ -164,7 +261,7 @@ function Comm:QueryCompleted(target, ids)
     local function flush()
         if #batch == 0 then return end
         nextRequest = (nextRequest % 9999) + 1
-        pendingQueries[nextRequest] = { target = target, ids = batch }
+        remember(nextRequest, { target = target, ids = batch })
         self:SendRaw(("Q;%d;%s"):format(nextRequest, table.concat(batch, ",")), "WHISPER", target)
         batch = {}
     end
@@ -270,6 +367,25 @@ handlers.P = function(sender, f)
     if lastAsk[key] and GetTime() - lastAsk[key] < 10 then return end
     lastAsk[key] = GetTime()
     QM:Fire("QM_SHARE_REQUESTED", sender, id)
+end
+
+handlers.K = function(sender, f)
+    local req = tonumber(f[2])
+    if not req then return end
+    local ids = Comm.DecodeIds(f[3])
+    local bits = {}
+    for i, id in ipairs(ids) do bits[i] = QM.Log:IsCompleted(id) end
+    Comm:SendRaw(("B;%d;%s"):format(req, Comm.EncodeBits(bits, #ids)), "WHISPER", sender)
+end
+
+handlers.B = function(sender, f)
+    local req = tonumber(f[2])
+    local pending = req and pendingQueries[req]
+    if not pending then return end
+    local bits = Comm.DecodeBits(f[3], #pending.ids)
+    local result = {}
+    for i, id in ipairs(pending.ids) do result[id] = bits[i] or false end
+    QM:Fire("QM_PEER_COMPLETED", sender, result)
 end
 
 handlers.C = function(sender, f)

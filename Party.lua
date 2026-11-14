@@ -135,24 +135,48 @@ function Party:IsCompleted(member, questID)
 end
 
 --- Ask members with the addon about any of these quests we haven't asked about yet.
-function Party:RequestCompleted(ids)
+-- Requests from every chain on screen pile up here for a moment and go out together:
+-- one question to the whole group instead of one per chain per player.
+local wanted, flushPending = {}, false
+local RETRY = 45 -- seconds before asking again about an id nobody answered
+
+local function flushCompleted()
+    flushPending = false
     local now = GetTime()
-    for _, m in ipairs(self.order) do
+    local groupIds, groupSeen = {}, {}
+    for _, m in ipairs(Party.order) do
         if not m.isPlayer and not m.fake then
-            local p = self.peers[m.name]
+            local p = Party.peers[m.name]
             if p and p.hasAddon then
                 local need = {}
-                for _, id in ipairs(ids) do
-                    -- ask again if an answer hasn't come back after a while
-                    if p.completed[id] == nil and (not p.asked[id] or now - p.asked[id] > 20) then
+                for id in pairs(wanted) do
+                    if p.completed[id] == nil and (not p.asked[id] or now - p.asked[id] > RETRY) then
                         p.asked[id] = now
                         need[#need + 1] = id
                     end
                 end
-                if #need > 0 then QM.Comm:QueryCompleted(m.name, need) end
+                if #need > 0 then
+                    if (p.proto or 1) >= 2 then
+                        for _, id in ipairs(need) do
+                            if not groupSeen[id] then groupSeen[id] = true; groupIds[#groupIds + 1] = id end
+                        end
+                    else
+                        table.sort(need)
+                        QM.Comm:QueryCompleted(m.name, need) -- older copy: the old way
+                    end
+                end
             end
         end
     end
+    wipe(wanted)
+    if #groupIds > 0 then QM.Comm:QueryCompletedGroup(groupIds) end
+end
+
+function Party:RequestCompleted(ids)
+    for _, id in ipairs(ids) do wanted[id] = true end
+    if flushPending then return end
+    flushPending = true
+    C_Timer.After(0.3, flushCompleted)
 end
 
 ---------------------------------------------------------------------------
