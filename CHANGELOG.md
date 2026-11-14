@@ -1,5 +1,11 @@
 # Fellowstep
 
+## 0.5.3
+- Much faster syncing for big quest logs: one batched question to the whole group, with compact answers.
+- Clearer chain labels instead of "in sync / out of sync": Same step, You're behind, Castform is behind, You need level 17, and so on.
+- The tracker badge shows a grey "Lv17" when you can't take the next quest yet.
+- "Ask to Share" only shows when you could take the quest right now.
+
 ## 0.5.2
 - Badges on the quest list beside the world map too.
 - Fix "In sync" when one player has a quest and another hasn't picked it up (or isn't high enough level yet).
