@@ -485,6 +485,7 @@ end
 function Chains:Standing(chain)
     local members = QM.Party:Members()
     local rows, mine = {}, 0
+    local myStuck
     local unknown, lo, hi = false, nil, nil
     for _, m in ipairs(members) do
         if not m.isPlayer and not self:CanDo(chain, m) then
@@ -504,7 +505,15 @@ function Chains:Standing(chain)
                 for _, step in ipairs(chain.steps) do
                     local st = self:Status(chain, step, m)
                     if not finishedStatus(st) then
-                        nextStep = st == S.LEVEL and step.requiredLevel and ("needs level %d"):format(step.requiredLevel) or "hasn't picked up " .. (step.name or "the next one")
+                        if st == S.LEVEL and step.requiredLevel then
+                            nextStep = ("needs level %d"):format(step.requiredLevel)
+                            if m.isPlayer then myStuck = step.requiredLevel end
+                        elseif st == S.BLOCKED then
+                            nextStep = "needs an earlier quest"
+                            if m.isPlayer then myStuck = true end
+                        else
+                            nextStep = "hasn't picked up " .. (step.name or "the next one")
+                        end
                         break
                     end
                 end
@@ -524,6 +533,7 @@ function Chains:Standing(chain)
     if not lo then return nil, 0, rows end
     if unknown then return "unknown", 0, rows end
     -- half steps (one has the quest, the other hasn't picked it up) round up to one
+    if hi > mine and myStuck then return "waiting", type(myStuck) == "number" and myStuck or 0, rows end
     if hi > mine then return "behind", math.ceil(hi - mine), rows end
     if lo < mine then return "ahead", math.ceil(mine - lo), rows end
     return "same", 0, rows

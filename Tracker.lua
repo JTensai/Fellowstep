@@ -35,6 +35,9 @@ local function showTooltip(badge)
         GameTooltip:AddLine(("You're %d %s behind. Focus on this one."):format(n, n == 1 and "step" or "steps"), RED[1], RED[2], RED[3], true)
     elseif kind == "ahead" then
         GameTooltip:AddLine(("You're %d %s ahead. Hold off so the others can catch up."):format(n, n == 1 and "step" or "steps"), BLUE[1], BLUE[2], BLUE[3], true)
+    elseif kind == "waiting" then
+        GameTooltip:AddLine(n > 0 and ("You need level %d for the next quest in this chain."):format(n)
+            or "You need to finish an earlier quest before the next one in this chain.", GREY[1], GREY[2], GREY[3], true)
     else
         GameTooltip:AddLine("Still asking the group where they are.", GREY[1], GREY[2], GREY[3], true)
     end
@@ -115,7 +118,9 @@ local function paint(block, questID, place, centered)
     else
         b.icon:Hide(); b.text:Show()
         local c = kind == "behind" and RED or kind == "ahead" and BLUE or GREY
-        b.text:SetText(kind == "behind" and ("-" .. n) or kind == "ahead" and ("+" .. n) or "...")
+        local label = kind == "behind" and ("-" .. n) or kind == "ahead" and ("+" .. n) or "..."
+        if kind == "waiting" then label = n > 0 and ("Lv" .. n) or "..." end
+        b.text:SetText(label)
         b.text:SetTextColor(c[1], c[2], c[3])
     end
     b:Show()

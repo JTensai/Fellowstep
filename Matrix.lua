@@ -688,22 +688,47 @@ local function chainSummary(chain)
             local st = statuses[mi][si]
             if isOnIt(st) then p.where = "On " .. (step.name or "?") break end
             if st == S.LEVEL and step.requiredLevel then
-                p.where = ("Needs level %d for %s"):format(step.requiredLevel, step.name or "?") break
+                p.where = ("Needs level %d for %s"):format(step.requiredLevel, step.name or "?")
+                p.stuck, p.needLevel = true, step.requiredLevel
+                break
+            end
+            if st == S.BLOCKED then
+                p.where = "Needs an earlier quest for " .. (step.name or "?")
+                p.stuck = true
+                break
             end
             if not isFinished(st) then p.where = "Next: " .. (step.name or "?") break end
         end
         p.where = p.where or "Finished"
         people[mi] = p
     end
+    -- Say what's actually going on. Someone who can't take the next quest yet (level,
+    -- an earlier quest) isn't "behind" in a way they can fix right now, so say why instead.
     local flag, flagColor
-    if anyBehind then
-        flag, flagColor = "Out of sync", UI.C.red
+    local grey = UI.C.muted or { 0.6, 0.6, 0.6 }
+    local me = people[1]
+    local behind, stuck = {}, {}
+    for _, p in ipairs(people) do
+        if p.behind then
+            if p.stuck then stuck[#stuck + 1] = p else behind[#behind + 1] = p end
+        end
+    end
+    if me and me.behind and me.stuck then
+        flag, flagColor = me.needLevel and ("You need level %d"):format(me.needLevel) or "You need an earlier quest", grey
+    elseif me and me.behind then
+        flag, flagColor = "You're behind", UI.C.red
+    elseif #behind > 0 then
+        flag, flagColor = #behind == 1 and (QM.ShortName(behind[1].member.name) .. " is behind") or "Others are behind", UI.C.blue or { 0.35, 0.65, 1 }
+    elseif #stuck > 0 then
+        local p = stuck[1]
+        local who = #stuck == 1 and QM.ShortName(p.member.name) or "Others"
+        flag, flagColor = (#stuck == 1 and p.needLevel) and ("%s needs level %d"):format(who, p.needLevel) or (who .. " can't take it yet"), grey
     elseif unknown then
-        flag, flagColor = "Some unknown", UI.C.muted or { 0.6, 0.6, 0.6 }
+        flag, flagColor = "Checking...", grey
     elseif #members - (playerOut and 1 or 0) < 2 then
         flag = nil
     else
-        flag, flagColor = "In sync", UI.C.green
+        flag, flagColor = "Same step", UI.C.green
     end
     return statuses, flag, flagColor, people
 end
