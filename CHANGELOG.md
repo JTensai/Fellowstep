@@ -1,5 +1,9 @@
 # Fellowstep
 
+## 0.5.4
+- Zone headers show how many quests you can share ("2 to share") and how many others can share with you ("1 for you").
+- Chains get a Share button when a party member can take a quest you have, or an Ask button when someone has one you can take. Go down the list and click.
+
 ## 0.5.3
 - Much faster syncing for big quest logs: one batched question to the whole group, with compact answers.
 - Clearer chain labels instead of "in sync / out of sync": Same step, You're behind, Castform is behind, You need level 17, and so on.

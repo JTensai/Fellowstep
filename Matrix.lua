@@ -789,6 +789,39 @@ local function listRow(index)
     row.meta = UI.Text(row, "muted")
     row.meta:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -3)
     row.segments = {}
+    -- Share / Ask button for this chain (see shareInfo)
+    row.action = UI.Button(row, "Share", 54, 20)
+    row.action:SetPoint("TOPRIGHT", -4, -4)
+    row.action:SetFrameLevel(row:GetFrameLevel() + 3)
+    row.action:SetScript("OnClick", function(self)
+        local a = self.info
+        if not a then return end
+        if a.give then
+            UI.ShareQuest(a.give.id)
+        elseif a.ask then
+            QM.Comm:AskToShare(a.ask.holder.name, a.ask.id)
+            QM:Print(("asked %s to share %s."):format(QM.ShortName(a.ask.holder.name), a.ask.name or "the quest"))
+        end
+        C_Timer.After(2, function() Matrix:Refresh() end)
+    end)
+    row.action:SetScript("OnEnter", function(self)
+        local a = self.info
+        if not a then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if a.give then
+            local names = {}
+            for _, m in ipairs(a.give.to) do names[#names + 1] = QM.ShortName(m.name) end
+            GameTooltip:SetText("Share " .. (a.give.name or "quest"), 1, 0.82, 0)
+            GameTooltip:AddLine("Can take it now: " .. table.concat(names, ", "), 1, 1, 1, true)
+            if a.giveCount > 1 then GameTooltip:AddLine(("%d quests in this chain to share; click again for the next."):format(a.giveCount), 0.7, 0.7, 0.7, true) end
+        else
+            GameTooltip:SetText("Ask for " .. (a.ask.name or "quest"), 1, 0.82, 0)
+            GameTooltip:AddLine(("%s has it and you can take it now. Pops up a Share button on their screen."):format(QM.ShortName(a.ask.holder.name)), 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    row.action:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.action:Hide()
     row:SetScript("OnMouseDown", function() list.scroll:BeginDrag() end)
     row:SetScript("OnEnter", showChainTooltip)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -875,6 +908,37 @@ local function zoneHeader(index, content)
     return h
 end
 
+--- What can be shared in this chain right now.
+--- give: a quest you have that a party member can take now and doesn't have.
+--- ask: a quest a party member has that you can take now.
+local function shareInfo(chain)
+    local members = QM.Chains:MembersFor(chain)
+    local me = members[1]
+    local gives, asks = {}, {}
+    for _, step in ipairs(chain.steps) do
+        local id = step.id
+        if QM.Log.active[id] then
+            local pushable = not C_QuestLog.IsPushableQuest or C_QuestLog.IsPushableQuest(id)
+            if pushable then
+                local to = {}
+                for _, m in ipairs(members) do
+                    if not m.isPlayer and QM.Chains:Status(chain, step, m) == S.AVAILABLE then to[#to + 1] = m end
+                end
+                if #to > 0 then gives[#gives + 1] = { id = id, name = step.name, to = to } end
+            end
+        elseif me and QM.Chains:Status(chain, step, me) == S.AVAILABLE then
+            for _, m in ipairs(members) do
+                if not m.isPlayer and not m.fake and QM.Party:HasAddon(m) and QM.Party:GetQuest(m, id) then
+                    asks[#asks + 1] = { id = id, name = step.name, holder = m }
+                    break
+                end
+            end
+        end
+    end
+    if #gives == 0 and #asks == 0 then return nil end
+    return { give = gives[1], ask = asks[1], giveCount = #gives, askCount = #asks }
+end
+
 --- Does a chain match the search text? Chain title or any quest in it.
 local function matchesFilter(chain, filter)
     if not filter then return true end
@@ -929,9 +993,16 @@ function Matrix:RefreshList()
     local closed = QM.char.collapsedZones
     local zoneCount = {}
     local function zoneOf(chain) return chain.otherClass and OTHER_CLASS or (chain.zoneName or "?") end
+    local zoneGive, zoneAsk, shares = {}, {}, {}
     for _, chain in ipairs(chains) do
         local z = zoneOf(chain)
         zoneCount[z] = (zoneCount[z] or 0) + 1
+        local info = not chain.otherClass and shareInfo(chain) or nil
+        shares[chain] = info
+        if info then
+            zoneGive[z] = (zoneGive[z] or 0) + info.giveCount
+            zoneAsk[z] = (zoneAsk[z] or 0) + info.askCount
+        end
         if chain.key == selectedKey then found = true end
     end
     for _, chain in ipairs(chains) do
@@ -943,7 +1014,10 @@ function Matrix:RefreshList()
             h:ClearAllPoints()
             h:SetPoint("TOPLEFT", 0, -y)
             h.zone = zone
-            h.text:SetText(("%s (%d)"):format(zone, zoneCount[zone]))
+            local extra = ""
+            if (zoneGive[zone] or 0) > 0 then extra = extra .. ("  |cff40c040%d to share|r"):format(zoneGive[zone]) end
+            if (zoneAsk[zone] or 0) > 0 then extra = extra .. ("  |cff59a6ff%d for you|r"):format(zoneAsk[zone]) end
+            h.text:SetText(("%s (%d)%s"):format(zone, zoneCount[zone], extra))
             local isFolded = closed[zone]
             if zone == OTHER_CLASS then isFolded = not QM.char.showOtherClass end
             h.toggle:SetTexture(isFolded and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
@@ -962,6 +1036,16 @@ function Matrix:RefreshList()
         row.chain, row.people = chain, people
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, -y)
+        local info = shares[chain]
+        row.action.info = info
+        if info then
+            row.action:SetText(info.give and "Share" or "Ask")
+            row.action:Show()
+        else
+            row.action:Hide()
+        end
+        -- leave room for the button so the name wraps rather than running under it
+        row.name:SetWidth(LIST_WIDTH - 18 - 16 - (info and 58 or 0))
         row.name:SetText(chain.title)
         local title = UI.QuestTitleColor()
         row.name:SetTextColor(title[1], title[2], title[3])
