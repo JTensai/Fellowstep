@@ -368,7 +368,7 @@ local function createDetail()
         "Posts the quest giver's name and a clickable map pin in party chat.")
     detail.share = UI.Button(detail, "Share Quest with Party", 272, 22)
     buttonTip(detail.share, "Share Quest with Party",
-        "Offers your copy of this quest to everyone in the group who can take it, like the Share button in your quest log.")
+        "Opens this quest in your quest log with its Share button highlighted. The game only lets you click that button yourself.")
     detail.close = UI.CloseButton(detail)
     detail.close:SetPoint("TOPRIGHT", 0, 0)
     detail:Hide()
@@ -1598,7 +1598,7 @@ function Matrix:ShowDetail(node)
     if canShare then
         detail.share:SetText("Share Quest with Party")
         detail.share.tipTitle = "Share Quest with Party"
-        detail.share.tipText = "Offers your copy of this quest to everyone in the group who can take it, like the Share button in your quest log."
+        detail.share.tipText = "Opens this quest in your quest log with its Share button highlighted. The game only lets you click that button yourself."
         detail.share:SetScript("OnClick", function()
             UI.ShareQuest(step.id)
             detail:Hide()

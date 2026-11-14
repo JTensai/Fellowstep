@@ -538,6 +538,40 @@ function UI.TellParty(text, loc)
 end
 
 --- Share a quest you have with the party (must be called from a click).
+-- The game lets only your own click on its Share button share a quest (QuestLogPushQuest is
+-- protected), so "Share" opens the quest in the quest log and points at that button.
+local shareGlow
+local function pointAtShareButton()
+    local details = QuestMapFrame and QuestMapFrame.DetailsFrame
+    local button = details and details.ShareButton
+    if not button or not button:IsVisible() then return end
+    if not shareGlow then
+        shareGlow = CreateFrame("Frame", nil, UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        shareGlow:SetFrameStrata("DIALOG")
+        shareGlow:EnableMouse(false)
+        if shareGlow.SetBackdrop then
+            shareGlow:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 14 })
+            shareGlow:SetBackdropBorderColor(1, 0.82, 0, 1)
+        end
+        local pulse = shareGlow:CreateAnimationGroup()
+        pulse:SetLooping("BOUNCE")
+        local fade = pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1); fade:SetToAlpha(0.25); fade:SetDuration(0.5)
+        shareGlow.pulse = pulse
+    end
+    shareGlow:ClearAllPoints()
+    shareGlow:SetPoint("TOPLEFT", button, "TOPLEFT", -6, 6)
+    shareGlow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
+    shareGlow.until_ = GetTime() + 8
+    shareGlow:SetScript("OnUpdate", function(self)
+        if GetTime() > self.until_ or not button:IsVisible() then
+            self.pulse:Stop(); self:Hide(); self:SetScript("OnUpdate", nil)
+        end
+    end)
+    shareGlow:Show()
+    shareGlow.pulse:Play()
+end
+
 function UI.ShareQuest(questID)
     if C_QuestLog.IsPushableQuest and not C_QuestLog.IsPushableQuest(questID) then
         QM:Print("that quest can't be shared. The quest giver is marked on your map instead.")
@@ -545,8 +579,25 @@ function UI.ShareQuest(questID)
     end
     if QM.Test and QM.Test:IsOn() then
         QM:Print("test mode: pretending to share the quest.")
+        return true
     end
-    C_QuestLog.SetSelectedQuest(questID)
-    QuestLogPushQuest()
+    if InCombatLockdown() then
+        QM:Print("can't open the quest log during combat. Try again after the fight.")
+        return false
+    end
+    local ok = pcall(function()
+        if QuestMapFrame_OpenToQuestDetails then
+            QuestMapFrame_OpenToQuestDetails(questID)
+        else
+            if WorldMapFrame and not WorldMapFrame:IsShown() then ToggleWorldMap() end
+            QuestMapFrame_ShowQuestDetails(questID)
+        end
+    end)
+    if not ok then
+        QM:Print("open the quest in your quest log and click Share.")
+        return true
+    end
+    C_Timer.After(0.1, pointAtShareButton)
+    QM:Print("click |cffffd100Share|r at the bottom of the quest. The game only lets you press that one yourself.")
     return true
 end
