@@ -1479,7 +1479,9 @@ function Matrix:ShowDetail(node)
     local canShare = QM.Log.active[step.id] and someoneNeeds
     -- you don't have it but someone with the addon does: ask them to share it
     local holder
-    if not QM.Log.active[step.id] and not QM.Log:IsCompleted(step.id) then
+    -- only when you could take it right now: prerequisites done, level and class fit
+    local me = QM.Party:Members()[1]
+    if me and QM.Chains:Status(node.chain, step, me) == S.AVAILABLE then
         for _, m in ipairs(QM.Party:Members()) do
             if not m.isPlayer and QM.Party:HasAddon(m) and QM.Party:GetQuest(m, step.id) then holder = m break end
         end
