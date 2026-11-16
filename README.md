@@ -1,9 +1,11 @@
 # Fellowstep
 
-Keeps a questing group in sync on WoW: Forever. It needs **QuestieDB** installed. Questie itself is optional.
+Keeps a questing group together on WoW: Forever and retail WoW.
+- **Forever:** install **QuestieDB** too. It has the quest chains. Questie itself is optional.
+- **Retail:** nothing else needed. Chains come from the game's own storylines, the ones the world map shows, so a quest that isn't part of a storyline shows on its own.
 
 ## Setup
-1. Install Fellowstep and QuestieDB on every PC in the group.
+1. Install Fellowstep on every PC in the group (plus QuestieDB on Forever).
 2. On a kid's character, type `/fs quiet` once. That character keeps syncing but shows no Fellowstep windows.
 
 ## Stick Together (off by default)

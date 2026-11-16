@@ -1,5 +1,7 @@
 -- Fellowstep: Chains
--- Builds quest chains from QuestieDB and works out each member's status on every step.
+-- Builds quest chains and works out each member's status on every step. The chain data
+-- comes from QuestieDB on Forever and Classic, and from Blizzard's quest lines on retail
+-- (QuestLines.lua), which answer the same questions.
 
 local _, QM = ...
 
@@ -9,6 +11,7 @@ QM.Chains = Chains
 local DB, Q
 local REQUIRED_CONTRACT = 4
 local MAX_CHAIN_NODES = 24
+local source -- "questie" or "questlines"
 
 Chains.ready = false
 Chains.failed = nil
@@ -78,6 +81,19 @@ end
 
 QM:On("QM_LOGIN", function()
     DB = _G.LibQuestieDB
+    if (not DB or not DB.Quest) and QM.QuestLines and QM.QuestLines.Available() then
+        -- retail: Blizzard's quest lines. Nothing to index; chains are learned as quests turn up.
+        DB, Q, source = nil, QM.QuestLines.Quest, "questlines"
+        MAX_CHAIN_NODES = 40 -- campaigns are long, and they're one straight line
+        QM.QuestLines.Start()
+        if (select(4, GetBuildInfo()) or 0) < 100000 then
+            -- Forever or Classic without QuestieDB: quest lines there are sparse
+            QM:Print("Install QuestieDB for complete quest chains. Until then Fellowstep uses the game's own storylines.")
+        end
+        Chains.ready = true
+        QM:Fire("QM_CHAINS_READY")
+        return
+    end
     if not DB or not DB.Quest then
         Chains.failed = "QuestieDB isn't loaded, so quest chains are unavailable."
         QM:Print(Chains.failed)
@@ -89,7 +105,7 @@ QM:On("QM_LOGIN", function()
         QM:Print(message)
         return
     end
-    Q = DB.Quest
+    Q, source = DB.Quest, "questie"
     local faction = UnitFactionGroup("player")
     factionMask = DB.Enum and DB.Enum.factionRaceMasks and DB.Enum.factionRaceMasks[faction]
     local _, _, raceID = UnitRace("player")
@@ -172,6 +188,8 @@ local function buildNode(id)
         breadcrumbFor = field(id, "breadcrumbForQuestId"),
         starter = starter,
         starterKind = starterKind,
+        lineName = field(id, "questLineName"),
+        uiMapID = field(id, "uiMapID"),
     }
 end
 
@@ -299,6 +317,10 @@ function Chains:ForQuest(questID)
     local zoneName
     local zone = root and root.zone
     if zone and zone > 0 and C_Map.GetAreaInfo then zoneName = C_Map.GetAreaInfo(zone) end
+    if not zoneName and root and root.uiMapID then
+        local info = C_Map.GetMapInfo(root.uiMapID)
+        zoneName = info and info.name
+    end
 
     local levels = {}
     for _, n in ipairs(flat) do
@@ -308,13 +330,15 @@ function Chains:ForQuest(questID)
 
     local chain = {
         key = key,
-        title = root and root.name or "?",
+        title = root and (root.lineName or root.name) or "?",
         zoneName = zoneName or "Other",
         steps = flat,
         byId = byId,
         minLevel = levels[1],
         maxLevel = levels[#levels],
     }
+    -- On retail a lone quest may just not be learned yet; don't remember it as a lone quest.
+    if source == "questlines" and #flat == 1 then return chain end
     -- quests further down see the same chain; ancestors build their own view
     for id in pairs(downSet) do chainCache[id] = chain end
     chainCache[questID] = chain
@@ -583,6 +607,7 @@ end
 
 --- { name, uiMapID, x, y } (x, y in 0-100) for the step's quest giver, or nil.
 function Chains:StarterLocation(step)
+    if source == "questlines" then return QM.QuestLines.StartLocation(step.id) end
     if not DB or not step.starter then return nil end
     local entity = (step.starterKind == "npc" and DB.Npc) or (step.starterKind == "object" and DB.Object)
     if not entity then return nil end

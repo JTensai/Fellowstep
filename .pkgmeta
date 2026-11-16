@@ -1,5 +1,8 @@
 package-as: Fellowstep
 
+optional-dependencies:
+  - questiedb
+
 manual-changelog:
   filename: CHANGELOG.md
   markup-type: markdown

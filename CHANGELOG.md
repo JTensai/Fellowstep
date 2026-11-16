@@ -1,5 +1,8 @@
 # Fellowstep
 
+## 0.6.0
+- Works on retail WoW. Chains there come from the game's own storylines, so no QuestieDB is needed.
+
 ## 0.5.5
 - Fix the "tried to call the protected function QuestLogPushQuest" error. The game only lets you click its own Share button, so Share now opens the quest in your quest log with that button highlighted.
 

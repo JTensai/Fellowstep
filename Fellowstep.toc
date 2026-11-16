@@ -4,7 +4,7 @@
 ## Author: Jordan
 ## Version: @project-version@
 ## Category: Quests
-## Dependencies: QuestieDB
+## OptionalDeps: QuestieDB
 ## SavedVariables: FellowstepDB
 ## SavedVariablesPerCharacter: FellowstepCharDB
 ## AddonCompartmentFunc: Fellowstep_OnAddonCompartmentClick
@@ -15,6 +15,7 @@ Core.lua
 Log.lua
 Comm.lua
 Party.lua
+QuestLines.lua
 Chains.lua
 TestMode.lua
 Widgets.lua
