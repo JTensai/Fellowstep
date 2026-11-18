@@ -1,7 +1,9 @@
 package-as: Fellowstep
 
-optional-dependencies:
+required-dependencies:
   - questiedb
+
+optional-dependencies:
   - grail
 
 manual-changelog:
