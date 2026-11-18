@@ -2,6 +2,7 @@ package-as: Fellowstep
 
 optional-dependencies:
   - questiedb
+  - grail
 
 manual-changelog:
   filename: CHANGELOG.md

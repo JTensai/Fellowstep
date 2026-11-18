@@ -4,6 +4,7 @@
 ## Author: Jordan
 ## Version: @project-version@
 ## Category: Quests
+## OptionalDeps: Grail
 ## SavedVariables: FellowstepDB
 ## SavedVariablesPerCharacter: FellowstepCharDB
 ## AddonCompartmentFunc: Fellowstep_OnAddonCompartmentClick
@@ -15,6 +16,7 @@ Log.lua
 Comm.lua
 Party.lua
 QuestLines.lua
+GrailData.lua
 Chains.lua
 TestMode.lua
 Widgets.lua

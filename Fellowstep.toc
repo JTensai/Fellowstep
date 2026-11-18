@@ -16,6 +16,7 @@ Log.lua
 Comm.lua
 Party.lua
 QuestLines.lua
+GrailData.lua
 Chains.lua
 TestMode.lua
 Widgets.lua

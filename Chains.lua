@@ -1,7 +1,8 @@
 -- Fellowstep: Chains
 -- Builds quest chains and works out each member's status on every step. The chain data
--- comes from QuestieDB on Forever and Classic, and from Blizzard's quest lines on retail
--- (QuestLines.lua), which answer the same questions.
+-- comes from QuestieDB on Forever and Classic. On retail it comes from Grail when that's
+-- installed (GrailData.lua), and otherwise from Blizzard's quest lines (QuestLines.lua).
+-- All of them answer the same questions.
 
 local _, QM = ...
 
@@ -11,7 +12,7 @@ QM.Chains = Chains
 local DB, Q
 local REQUIRED_CONTRACT = 4
 local MAX_CHAIN_NODES = 24
-local source -- "questie" or "questlines"
+local source -- "questie", "grail" or "questlines"
 
 Chains.ready = false
 Chains.failed = nil
@@ -81,6 +82,13 @@ end
 
 QM:On("QM_LOGIN", function()
     DB = _G.LibQuestieDB
+    if (not DB or not DB.Quest) and QM.GrailData and QM.GrailData.Start() then
+        -- retail with Grail: full prerequisite data, indexed like QuestieDB's
+        DB, Q, source = nil, QM.GrailData.Quest, "grail"
+        QM:Debug("chain data: Grail")
+        C_Timer.After(3, buildIndex)
+        return
+    end
     if (not DB or not DB.Quest) and QM.QuestLines and QM.QuestLines.Available() then
         -- retail: Blizzard's quest lines. Nothing to index; chains are learned as quests turn up.
         DB, Q, source = nil, QM.QuestLines.Quest, "questlines"
@@ -608,6 +616,7 @@ end
 --- { name, uiMapID, x, y } (x, y in 0-100) for the step's quest giver, or nil.
 function Chains:StarterLocation(step)
     if source == "questlines" then return QM.QuestLines.StartLocation(step.id) end
+    if source == "grail" then return QM.GrailData.StartLocation(step.id) end
     if not DB or not step.starter then return nil end
     local entity = (step.starterKind == "npc" and DB.Npc) or (step.starterKind == "object" and DB.Object)
     if not entity then return nil end
